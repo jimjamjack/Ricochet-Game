@@ -35,6 +35,63 @@ using namespace glm;
 #include "Texture.h"
 #include "DebugDrawer.h"
 
+bool debugmode = false;
+int targetNum = 5;
+int bulletCount = 2;
+int shots = 0;
+int gravity = -9.81f;
+
+void initialiseGame() {
+	string useDefault;
+	string useDebug;
+	int enteredNumber = 0;
+	string enteredGravity;
+
+	while (useDefault != "y" && useDefault != "n") {
+		cout << "Would you like to use default settings? (y/n): ";
+		getline(cin, useDefault);
+		if (useDefault == "n") {
+
+			while (useDebug != "y" && useDebug != "n") {
+				cout << "Would you like to use debug mode? (y/n): ";
+				getline(cin, useDebug);
+				if (useDebug == "y") {
+					debugmode = true;
+				}
+			}
+
+			while (!(enteredNumber >= 3 && enteredNumber <= 10)) {
+				cout << "How many targets would you like? (3 - 10): ";
+				cin >> enteredNumber;
+				while (cin.fail())
+				{
+					cout << "That was not an integer! Please enter an integer (3 - 10): ";
+					cin.clear();
+					cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+					cin >> enteredNumber;
+				}
+				targetNum = enteredNumber;
+				bulletCount = floor(targetNum / 2);
+				cin.ignore();
+			}
+
+			while (enteredGravity != "e" && enteredGravity != "m" && enteredGravity != "j") {
+				cout << "Which gravity would you like? ((e)arth, (m)oon or (j)upiter): ";
+				getline(cin, enteredGravity);
+				if (enteredGravity == "e") {
+					gravity = -9.81f;
+				}
+				else if (enteredGravity == "m") {
+					gravity = -1.6f;
+				}
+				else if (enteredGravity == "j") {
+					gravity = -24.8;
+				}
+			}
+		}
+	}
+}
+
 void drawCrosshair() {
 	int windowWidth, windowHeight;
 	glfwGetWindowSize(window, &windowWidth, &windowHeight);
@@ -136,7 +193,8 @@ void ScreenPosToWorldRay(
 
 int main()
 {
-	bool debugmode = true;
+
+	initialiseGame();
 
 	// Initialise GLFW
 	if (!glfwInit())
@@ -340,11 +398,7 @@ int main()
 	// Seed the rand() function for more random results
 	srand(time(NULL));
 
-	int bulletCount = 5;
-	int shots = 0;
-
 	// Generate positions & rotations for n targets
-	int targetNum = 5;
 	std::vector<glm::vec3> targetPositions(targetNum);
 	std::vector<glm::quat> targetOrientations(targetNum);
 	generateTargets(targetPositions, targetOrientations, targetNum);
@@ -373,7 +427,7 @@ int main()
 
 	// The world
 	btDiscreteDynamicsWorld* dynamicsWorld = new btDiscreteDynamicsWorld(dispatcher, broadphase, solver, collisionConfiguration);
-	dynamicsWorld->setGravity(btVector3(0, -9.81f, 0));
+	dynamicsWorld->setGravity(btVector3(0, gravity, 0));
 
 	BulletDebugDrawer_OpenGL mydebugdrawer;
 	GLuint programID2 = LoadShaders("DebugVertexShader.vertexshader", "DebugFragmentShader.fragmentshader");
@@ -448,7 +502,7 @@ int main()
 	btCollisionShape* floorCollisionShape = new btBoxShape(btVector3(8.4f, 0.1f, 8.3f));
 
 	btCollisionShape* bulletCollisionShape = new btBoxShape(btVector3(0.05f, 0.1f, 0.05f));
-	btScalar bulletMass = 1;
+	btScalar bulletMass = 0.00745f;
 	btVector3 bulletInertia(0, 0, 0);
 	bulletCollisionShape->calculateLocalInertia(bulletMass, bulletInertia);
 
@@ -513,7 +567,7 @@ int main()
 		}
 	}
 
-	bulletPositions[shots] = glm::vec3(getPosition().x, getPosition().y, getPosition().z - 1);
+	bulletPositions[shots] = glm::vec3(getPosition().x + 0.3, getPosition().y, getPosition().z - 2);
 	bulletRotations[shots] = glm::normalize(glm::quat(glm::vec3(1.5708 - getVertical(), 0.03054326 + getHorizontal(), 0)));
 
 	btDefaultMotionState* bulletMotionstate = new btDefaultMotionState(btTransform(
@@ -649,7 +703,7 @@ int main()
 		if (lcNewState == GLFW_RELEASE && lcOldState == GLFW_PRESS && bulletCount > 0) {
 
 			// This should be the bullet's world-coordinates, right now it just draws infront of the player
-			bulletPositions[shots] = glm::vec3(getPosition().x, getPosition().y, getPosition().z-1);
+			bulletPositions[shots] = glm::vec3(getPosition().x+0.3, getPosition().y, getPosition().z-2);
 			// This should be the bullet's world-rotation, right now it just takes the camera's angles with an offset
 			bulletRotations[shots] = glm::normalize(glm::quat(glm::vec3(1.5708-getVertical(), 0.03054326+getHorizontal(), 0)));
 
@@ -667,6 +721,11 @@ int main()
 
 			bulletCount--;
 			shots++;
+
+			glm::quat ViewRotation = (glm::quat)ViewMatrix;
+			glm::vec3 forward = (glm::vec3)(0, 0, 1);
+			glm::vec3 normal = ViewRotation * forward;
+			std::cout << glm::to_string(normal) << std::endl;
 		}
 		lcOldState = lcNewState;
 
@@ -683,17 +742,12 @@ int main()
 			glm::mat4 BulletScaleMatrix = scale(mat4(), glm::vec3(0.1f, 0.1f, 0.1f));
 			glm::mat4 ModelMatrix2 = BulletTranslationMatrix * BulletRotationMatrix * BulletScaleMatrix;
 			glm::mat4 MVP2 = ProjectionMatrix * ViewMatrix * ModelMatrix2;
+			//glm::mat4 BulletToWorld =  MVP2 * inverse(ViewMatrix);
+			//glm::mat4 FinalMVP = ProjectionMatrix * ViewMatrix * BulletToWorld;
 
-			//glm::mat4 ModelMatrix2 = glm::mat4(1.0);
+			//bulletPositions[i] = (glm::vec3) MVP2[3];	// Get the bullet's world coordinates
 
-			//// Add an offset so the gun appears in view
-			//ModelMatrix2 = glm::translate(ModelMatrix2, bulletPositions[i]);
-			//// Then translate/rotate gun based on camera position and horizontal/vertical angles
-			//ModelMatrix2 = glm::scale(ModelMatrix2, glm::vec3(0.1f, 0.1f, 0.1f));
-			//ModelMatrix2 = glm::rotate(ModelMatrix2, -1.5708f, glm::vec3(1.0f, 0.0f, 0.0f));
-			//ModelMatrix2 = glm::rotate(ModelMatrix2, getHorizontal(), glm::vec3(0.0f, 1.0f, 0.0f));
-			//ModelMatrix2 = glm::rotate(ModelMatrix2, -getVertical(), glm::vec3(1.0f, 0.0f, 0.0f));
-			//glm::mat4 MVP2 = ProjectionMatrix * ViewMatrix * ModelMatrix2;
+			//std::cout << glm::to_string(bulletCoordinates) << std::endl;
 
 			// Send our transformation to the currently bound shader, 
 			// in the "MVP" uniform
