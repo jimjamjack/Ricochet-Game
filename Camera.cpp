@@ -115,8 +115,6 @@ void computeMatricesFromInputs() {
 
 		if (nextStep.z < 9 && nextStep.z > -7 && nextStep.x < 9 && nextStep.x > -7) {
 			position = nextStep;
-			//// Print position vector
-			//std::cout << glm::to_string(getPosition()) << std::endl;
 		}
 
 	float FoV = initialFoV;

@@ -60,12 +60,12 @@ void initialiseGame() {
 				}
 			}
 
-			while (!(enteredNumber >= 3 && enteredNumber <= 10)) {
-				cout << "How many targets would you like? (3 - 10): ";
+			while (!(enteredNumber >= 3 && enteredNumber <= 15)) {
+				cout << "How many targets would you like? (3 - 15): ";
 				cin >> enteredNumber;
 				while (cin.fail())
 				{
-					cout << "That was not an integer! Please enter an integer (3 - 10): ";
+					cout << "That was not an integer! Please enter an integer (3 - 15): ";
 					cin.clear();
 					cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
 					cin >> enteredNumber;
@@ -702,6 +702,16 @@ int main()
 		int lcNewState = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT);
 		if (lcNewState == GLFW_RELEASE && lcOldState == GLFW_PRESS && bulletCount > 0) {
 
+			mat4 inverseViewMatrix = inverse(ViewMatrix);
+			vec3 cameraPos(inverseViewMatrix[3]);
+
+			glm::quat ViewRotation = (glm::quat)ViewMatrix;
+			//glm::vec3 forward = (glm::vec3)(0, 0, 1);
+			glm::vec3 normal = normalize(ViewRotation * cameraPos);
+			std::cout << "\nRotation: " << glm::to_string(ViewRotation) << std::endl;
+			std::cout << "Position: " << glm::to_string(cameraPos) << std::endl;
+			std::cout << "Normal: " << glm::to_string(normal) << std::endl;
+
 			// This should be the bullet's world-coordinates, right now it just draws infront of the player
 			bulletPositions[shots] = glm::vec3(getPosition().x+0.3, getPosition().y, getPosition().z-2);
 			// This should be the bullet's world-rotation, right now it just takes the camera's angles with an offset
@@ -721,11 +731,6 @@ int main()
 
 			bulletCount--;
 			shots++;
-
-			glm::quat ViewRotation = (glm::quat)ViewMatrix;
-			glm::vec3 forward = (glm::vec3)(0, 0, 1);
-			glm::vec3 normal = ViewRotation * forward;
-			std::cout << glm::to_string(normal) << std::endl;
 		}
 		lcOldState = lcNewState;
 
@@ -737,7 +742,7 @@ int main()
 
 			// Rotate bullet based on camera angles
 			glm::mat4 BulletRotationMatrix = glm::toMat4(bulletRotations[i]);
-			// Translate it by getPosition(), the camera's x, y and z, -1 on the z-axis
+			// Translate it by getPosition(), the camera's x, y and z, with an offset
 			glm::mat4 BulletTranslationMatrix = translate(mat4(), bulletPositions[i]);
 			glm::mat4 BulletScaleMatrix = scale(mat4(), glm::vec3(0.1f, 0.1f, 0.1f));
 			glm::mat4 ModelMatrix2 = BulletTranslationMatrix * BulletRotationMatrix * BulletScaleMatrix;
