@@ -36,8 +36,8 @@ using namespace glm;
 #include "DebugDrawer.h"
 
 bool debugmode = false;
-int targetNum = 5;
-int bulletCount = 2;
+int targetNum = 10; //5
+int bulletCount = 5; //2
 int shots = 0;
 int gravity = -9.81f;
 
@@ -289,7 +289,7 @@ int main()
 	std::vector<glm::vec3> bulletVertices;
 	std::vector<glm::vec2> bulletUvs;
 	std::vector<glm::vec3> bulletNormals;
-	res = loadAssImp("bullet2.obj", bulletIndices, bulletVertices, bulletUvs, bulletNormals);
+	res = loadAssImp("bullet.obj", bulletIndices, bulletVertices, bulletUvs, bulletNormals);
 
 	std::vector<unsigned short> targetIndices;
 	std::vector<glm::vec3> targetVertices;
@@ -401,11 +401,13 @@ int main()
 	// Generate positions & rotations for n targets
 	std::vector<glm::vec3> targetPositions(targetNum);
 	std::vector<glm::quat> targetOrientations(targetNum);
+	std::vector<btRigidBody*> targetRigidBodies(targetNum);
 	generateTargets(targetPositions, targetOrientations, targetNum);
 
 	// Generate room surface positions & rotations
-	std::vector<glm::vec3> wallPositions(6);
-	std::vector<glm::quat> wallOrientations(6);
+	int wallNum = 6;
+	std::vector<glm::vec3> wallPositions(wallNum);
+	std::vector<glm::quat> wallOrientations(wallNum);
 	generateWalls(wallPositions, wallOrientations);
 
 	// Generate bullet positions & rotations
@@ -501,10 +503,12 @@ int main()
 
 	btCollisionShape* floorCollisionShape = new btBoxShape(btVector3(8.4f, 0.1f, 8.3f));
 
-	btCollisionShape* bulletCollisionShape = new btBoxShape(btVector3(0.05f, 0.1f, 0.05f));
+	btCollisionShape* bulletCollisionShape = new btBoxShape(btVector3(0.03f, 0.04f, 0.03f));
 	btScalar bulletMass = 0.00745f;
 	btVector3 bulletInertia(0, 0, 0);
 	bulletCollisionShape->calculateLocalInertia(bulletMass, bulletInertia);
+
+	int userIndexNum = 0;
 
 	for (int i = 0; i < targetNum; i++) {
 
@@ -525,7 +529,11 @@ int main()
 		dynamicsWorld->addRigidBody(targetRigidBody);
 
 		// Store the mesh's index "i" in Bullet's User index
-		targetRigidBody->setUserIndex(i);
+		targetRigidBody->setUserIndex(userIndexNum);
+
+		targetRigidBodies[i] = targetRigidBody;
+
+		userIndexNum++;
 	}
 
 	for (int i = 0; i < 6; i++) {
@@ -548,7 +556,7 @@ int main()
 			dynamicsWorld->addRigidBody(wallRigidBody);
 
 			// Store the mesh's index "i" in Bullet's User index
-			wallRigidBody->setUserIndex(targetNum + i);
+			wallRigidBody->setUserIndex(userIndexNum);
 		}
 		else {
 			btRigidBody::btRigidBodyConstructionInfo wallRigidBodyCI(
@@ -563,8 +571,9 @@ int main()
 			dynamicsWorld->addRigidBody(wallRigidBody);
 
 			// Store the mesh's index "i" in Bullet's User index
-			wallRigidBody->setUserIndex(targetNum + i);
+			wallRigidBody->setUserIndex(userIndexNum);
 		}
+		userIndexNum++;
 	}
 
 	bulletPositions[shots] = glm::vec3(getPosition().x + 0.3, getPosition().y, getPosition().z - 2);
@@ -578,10 +587,25 @@ int main()
 	btRigidBody::btRigidBodyConstructionInfo bulletRigidBodyCI(bulletMass, bulletMotionstate, bulletCollisionShape, bulletInertia);
 	btRigidBody *bulletRigidBody = new btRigidBody(bulletRigidBodyCI);
 
+	// For speed computation
+	double lastTime = glfwGetTime();
+	int nbFrames = 0;
+
 	do {
 
-		// Step the simulation at an interval of 60hz
-		dynamicsWorld->stepSimulation(1 / 60.f, 10);
+		// Measure speed
+		double currentTime = glfwGetTime();
+		nbFrames++;
+		if (currentTime - lastTime >= 1.0) {
+			nbFrames = 0;
+			lastTime += 1.0;
+		}
+		float deltaTime = currentTime - lastTime;
+
+		dynamicsWorld->stepSimulation(deltaTime, 7);
+
+		//// Step the simulation at an interval of 60hz
+		//dynamicsWorld->stepSimulation(1 / 60.f, 10);
 
 		// Compute the MVP matrix from keyboard and mouse input
 		computeMatricesFromInputs();
@@ -612,15 +636,22 @@ int main()
 			btCollisionWorld::ClosestRayResultCallback RayCallback(btVector3(out_origin.x, out_origin.y, out_origin.z), btVector3(out_end.x, out_end.y, out_end.z));
 			dynamicsWorld->rayTest(btVector3(out_origin.x, out_origin.y, out_origin.z), btVector3(out_end.x, out_end.y, out_end.z), RayCallback);
 			if (RayCallback.hasHit()) {
-				if (RayCallback.m_collisionObject->getUserIndex() <= targetNum - 1) {
-					printf("\nHit Target!");
+				int rigidBodyIndex = RayCallback.m_collisionObject->getUserIndex();
+				if (rigidBodyIndex <= targetNum - 1) {
+					cout << "Hit Target " << rigidBodyIndex << "!" << endl;
+					dynamicsWorld->removeRigidBody(rigidbodies[rigidBodyIndex]);
+					//targetRigidBodies.erase(targetRigidBodies.begin() + rigidBodyIndex);
+					//targetPositions.resize(targetPositions.size() - 1);
 				}
-				else if (RayCallback.m_collisionObject->getUserIndex() > targetNum - 1) {
-					printf("\nHit Wall!");
+				else if (rigidBodyIndex > targetNum - 1 && rigidBodyIndex <= (targetNum + wallNum - 1)) {
+					cout << "Hit Wall!" << endl;
+				}
+				else if (rigidBodyIndex > (targetNum + wallNum - 1)) {
+					cout << "Hit Bullet!" << endl;
 				}
 			}
 			else {
-				printf("\nMiss!");
+				cout << "Miss!" << endl;
 			}
 		}
 		rcOldState = rcNewState;
@@ -703,17 +734,16 @@ int main()
 		if (lcNewState == GLFW_RELEASE && lcOldState == GLFW_PRESS && bulletCount > 0) {
 
 			mat4 inverseViewMatrix = inverse(ViewMatrix);
-			vec3 cameraPos(inverseViewMatrix[3]);
+			vec3 cameraPosition = vec3(inverseViewMatrix[3]);
+			vec3 cameraDirection = -vec3(inverseViewMatrix[2]);
+			vec3 offset = vec3(0.3, 0, -2);
+			vec3 newBulletPosition = cameraPosition + cameraDirection;
 
-			glm::quat ViewRotation = (glm::quat)ViewMatrix;
-			//glm::vec3 forward = (glm::vec3)(0, 0, 1);
-			glm::vec3 normal = normalize(ViewRotation * cameraPos);
-			std::cout << "\nRotation: " << glm::to_string(ViewRotation) << std::endl;
-			std::cout << "Position: " << glm::to_string(cameraPos) << std::endl;
-			std::cout << "Normal: " << glm::to_string(normal) << std::endl;
+			float bulletPower = 5.0f;
+			glm::vec3 bulletVelocity = cameraDirection * bulletPower;
 
 			// This should be the bullet's world-coordinates, right now it just draws infront of the player
-			bulletPositions[shots] = glm::vec3(getPosition().x+0.3, getPosition().y, getPosition().z-2);
+			bulletPositions[shots] = glm::vec3(newBulletPosition.x, newBulletPosition.y, newBulletPosition.z);
 			// This should be the bullet's world-rotation, right now it just takes the camera's angles with an offset
 			bulletRotations[shots] = glm::normalize(glm::quat(glm::vec3(1.5708-getVertical(), 0.03054326+getHorizontal(), 0)));
 
@@ -727,10 +757,21 @@ int main()
 
 			rigidbodies.push_back(bulletRigidBody);
 			dynamicsWorld->addRigidBody(bulletRigidBody);
+			// Store the mesh's index "i" in Bullet's User index
+			bulletRigidBody->setUserIndex(userIndexNum);
+			userIndexNum++;
+
 			bulletRigidBodies[shots] = bulletRigidBody;
+			bulletRigidBody->setLinearVelocity(btVector3(bulletVelocity.x, bulletVelocity.y, bulletVelocity.z));
 
 			bulletCount--;
 			shots++;
+
+			// To do:
+			// Start bullets from end of gun (offset newBulletPosition, set mass to 0 and don't move render bullet)
+			// Set correct velocity, bounce etc.
+			// Targets vanish on collision, bullets vanish when not moving
+			// Step simulation so that objects always collide
 		}
 		lcOldState = lcNewState;
 
@@ -742,22 +783,16 @@ int main()
 
 			// Rotate bullet based on camera angles
 			glm::mat4 BulletRotationMatrix = glm::toMat4(bulletRotations[i]);
-			// Translate it by getPosition(), the camera's x, y and z, with an offset
+			// Offset so that it appears after the barrel of the gun
 			glm::mat4 BulletTranslationMatrix = translate(mat4(), bulletPositions[i]);
-			glm::mat4 BulletScaleMatrix = scale(mat4(), glm::vec3(0.1f, 0.1f, 0.1f));
-			glm::mat4 ModelMatrix2 = BulletTranslationMatrix * BulletRotationMatrix * BulletScaleMatrix;
-			glm::mat4 MVP2 = ProjectionMatrix * ViewMatrix * ModelMatrix2;
-			//glm::mat4 BulletToWorld =  MVP2 * inverse(ViewMatrix);
-			//glm::mat4 FinalMVP = ProjectionMatrix * ViewMatrix * BulletToWorld;
-
-			//bulletPositions[i] = (glm::vec3) MVP2[3];	// Get the bullet's world coordinates
-
-			//std::cout << glm::to_string(bulletCoordinates) << std::endl;
+			glm::mat4 BulletScaleMatrix = scale(mat4(), glm::vec3(0.05f, 0.05f, 0.05f));
+			glm::mat4 BulletModelMatrix = BulletTranslationMatrix * BulletRotationMatrix * BulletScaleMatrix;
+			glm::mat4 MVP2 = ProjectionMatrix * ViewMatrix * BulletModelMatrix;
 
 			// Send our transformation to the currently bound shader, 
 			// in the "MVP" uniform
 			glUniformMatrix4fv(MatrixID, 1, GL_FALSE, &MVP2[0][0]);
-			glUniformMatrix4fv(ModelMatrixID, 1, GL_FALSE, &ModelMatrix2[0][0]);
+			glUniformMatrix4fv(ModelMatrixID, 1, GL_FALSE, &BulletModelMatrix[0][0]);
 
 			// 1st attribute buffer : vertices
 			glEnableVertexAttribArray(0);
@@ -815,8 +850,9 @@ int main()
 
 		////// End render of bullet //////
 		////// Start render of target //////
+		int i = 0;
 
-		for (int i = 0; i < targetNum; i++) {
+		for (auto btRigidBody : targetRigidBodies) {
 
 			glActiveTexture(GL_TEXTURE0);
 			glBindTexture(GL_TEXTURE_2D, targetTexture);
@@ -874,6 +910,7 @@ int main()
 
 			// Draw the triangles
 			glDrawElements(GL_TRIANGLES, targetIndices.size(), GL_UNSIGNED_SHORT, (void*)0);
+			i++;
 		}
 
 		////// End render of target //////
