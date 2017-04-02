@@ -501,7 +501,7 @@ int main()
 
 	btCollisionShape* wallCollisionShape = new btBoxShape(btVector3(8.4f, 4.7f, 0.1f));
 
-	btCollisionShape* floorCollisionShape = new btBoxShape(btVector3(8.4f, 0.1f, 8.3f));
+	btCollisionShape* floorCollisionShape = new btBoxShape(btVector3(8.4f, 0.1f, 8.5f));
 
 	btCollisionShape* bulletCollisionShape = new btBoxShape(btVector3(0.03f, 0.04f, 0.03f));
 	btScalar bulletMass = 0.00745f;
@@ -572,6 +572,8 @@ int main()
 
 			// Store the mesh's index "i" in Bullet's User index
 			wallRigidBody->setUserIndex(userIndexNum);
+
+			wallRigidBody->setRestitution(0.9);
 		}
 		userIndexNum++;
 	}
@@ -602,10 +604,39 @@ int main()
 		}
 		float deltaTime = currentTime - lastTime;
 
+		dynamicsWorld->performDiscreteCollisionDetection();
+
 		dynamicsWorld->stepSimulation(deltaTime, 7);
 
 		//// Step the simulation at an interval of 60hz
 		//dynamicsWorld->stepSimulation(1 / 60.f, 10);
+
+		//int numManifolds = dynamicsWorld->getDispatcher()->getNumManifolds();
+		//for (int i = 0; i < numManifolds; i++)
+		//{
+		//	btPersistentManifold* contactManifold = dynamicsWorld->getDispatcher()->getManifoldByIndexInternal(i);
+		//	const btCollisionObject *objA = contactManifold->getBody0();
+		//	const btCollisionObject *objB = contactManifold->getBody1();
+
+		//	int numContacts = contactManifold->getNumContacts();
+		//	for (int j = 0; j < numContacts; j++)
+		//	{
+		//		btManifoldPoint& pt = contactManifold->getContactPoint(j);
+		//		if (pt.getDistance() < 0.f)
+		//		{
+		//			const btVector3& ptA = pt.getPositionWorldOnA();
+		//			const btVector3& ptB = pt.getPositionWorldOnB();
+		//			const btVector3& normalOnB = pt.m_normalWorldOnB;
+
+		//			int rigidBodyIndex = objB->getUserIndex();
+		//			if (rigidBodyIndex <= targetNum - 1) {
+		//				cout << "Hit Target " << rigidBodyIndex << "!" << endl;
+		//				dynamicsWorld->removeRigidBody(rigidbodies[rigidBodyIndex]);
+		//				targetRigidBodies.at(rigidBodyIndex) = NULL;
+		//			}
+		//		}
+		//	}
+		//}
 
 		// Compute the MVP matrix from keyboard and mouse input
 		computeMatricesFromInputs();
@@ -640,11 +671,10 @@ int main()
 				if (rigidBodyIndex <= targetNum - 1) {
 					cout << "Hit Target " << rigidBodyIndex << "!" << endl;
 					dynamicsWorld->removeRigidBody(rigidbodies[rigidBodyIndex]);
-					//targetRigidBodies.erase(targetRigidBodies.begin() + rigidBodyIndex);
-					//targetPositions.resize(targetPositions.size() - 1);
+					targetRigidBodies.at(rigidBodyIndex) = NULL;
 				}
 				else if (rigidBodyIndex > targetNum - 1 && rigidBodyIndex <= (targetNum + wallNum - 1)) {
-					cout << "Hit Wall!" << endl;
+					cout << "Hit Wall " << rigidBodyIndex - targetNum << "!" << endl;
 				}
 				else if (rigidBodyIndex > (targetNum + wallNum - 1)) {
 					cout << "Hit Bullet!" << endl;
@@ -739,12 +769,10 @@ int main()
 			vec3 offset = vec3(0.3, 0, -2);
 			vec3 newBulletPosition = cameraPosition + cameraDirection;
 
-			float bulletPower = 5.0f;
+			float bulletPower = 10.0f;
 			glm::vec3 bulletVelocity = cameraDirection * bulletPower;
 
-			// This should be the bullet's world-coordinates, right now it just draws infront of the player
 			bulletPositions[shots] = glm::vec3(newBulletPosition.x, newBulletPosition.y, newBulletPosition.z);
-			// This should be the bullet's world-rotation, right now it just takes the camera's angles with an offset
 			bulletRotations[shots] = glm::normalize(glm::quat(glm::vec3(1.5708-getVertical(), 0.03054326+getHorizontal(), 0)));
 
 			btDefaultMotionState* bulletMotionstate = new btDefaultMotionState(btTransform(
@@ -763,6 +791,7 @@ int main()
 
 			bulletRigidBodies[shots] = bulletRigidBody;
 			bulletRigidBody->setLinearVelocity(btVector3(bulletVelocity.x, bulletVelocity.y, bulletVelocity.z));
+			bulletRigidBody->setRestitution(0.4);
 
 			bulletCount--;
 			shots++;
@@ -850,66 +879,68 @@ int main()
 
 		////// End render of bullet //////
 		////// Start render of target //////
+
 		int i = 0;
 
 		for (auto btRigidBody : targetRigidBodies) {
+			if (btRigidBody != NULL) {
+				glActiveTexture(GL_TEXTURE0);
+				glBindTexture(GL_TEXTURE_2D, targetTexture);
+				glUniform1i(TextureID, 0);
 
-			glActiveTexture(GL_TEXTURE0);
-			glBindTexture(GL_TEXTURE_2D, targetTexture);
-			glUniform1i(TextureID, 0);
+				glm::mat4 TargetRotationMatrix = glm::toMat4(targetOrientations[i]);
+				glm::mat4 TargetTranslationMatrix = translate(mat4(), targetPositions[i]);
+				glm::mat4 ModelMatrix3 = TargetTranslationMatrix * TargetRotationMatrix;
 
-			glm::mat4 TargetRotationMatrix = glm::toMat4(targetOrientations[i]);
-			glm::mat4 TargetTranslationMatrix = translate(mat4(), targetPositions[i]);
-			glm::mat4 ModelMatrix3 = TargetTranslationMatrix * TargetRotationMatrix;
+				glm::mat4 MVP3 = ProjectionMatrix * ViewMatrix * ModelMatrix3;
 
-			glm::mat4 MVP3 = ProjectionMatrix * ViewMatrix * ModelMatrix3;
+				// Send our transformation to the currently bound shader, 
+				// in the "MVP" uniform
+				glUniformMatrix4fv(MatrixID, 1, GL_FALSE, &MVP3[0][0]);
+				glUniformMatrix4fv(ModelMatrixID, 1, GL_FALSE, &ModelMatrix3[0][0]);
 
-			// Send our transformation to the currently bound shader, 
-			// in the "MVP" uniform
-			glUniformMatrix4fv(MatrixID, 1, GL_FALSE, &MVP3[0][0]);
-			glUniformMatrix4fv(ModelMatrixID, 1, GL_FALSE, &ModelMatrix3[0][0]);
+				// 1st attribute buffer : vertices
+				glEnableVertexAttribArray(0);
+				glBindBuffer(GL_ARRAY_BUFFER, vertexbuffer3);
+				glVertexAttribPointer(
+					0,                  // attribute
+					3,                  // size
+					GL_FLOAT,           // type
+					GL_FALSE,           // normalized?
+					0,                  // stride
+					(void*)0            // array buffer offset
+				);
 
-			// 1st attribute buffer : vertices
-			glEnableVertexAttribArray(0);
-			glBindBuffer(GL_ARRAY_BUFFER, vertexbuffer3);
-			glVertexAttribPointer(
-				0,                  // attribute
-				3,                  // size
-				GL_FLOAT,           // type
-				GL_FALSE,           // normalized?
-				0,                  // stride
-				(void*)0            // array buffer offset
-			);
+				// 2nd attribute buffer : UVs
+				glEnableVertexAttribArray(1);
+				glBindBuffer(GL_ARRAY_BUFFER, uvbuffer3);
+				glVertexAttribPointer(
+					1,                                // attribute
+					2,                                // size
+					GL_FLOAT,                         // type
+					GL_FALSE,                         // normalized?
+					0,                                // stride
+					(void*)0                          // array buffer offset
+				);
 
-			// 2nd attribute buffer : UVs
-			glEnableVertexAttribArray(1);
-			glBindBuffer(GL_ARRAY_BUFFER, uvbuffer3);
-			glVertexAttribPointer(
-				1,                                // attribute
-				2,                                // size
-				GL_FLOAT,                         // type
-				GL_FALSE,                         // normalized?
-				0,                                // stride
-				(void*)0                          // array buffer offset
-			);
+				// 3rd attribute buffer : normals
+				glEnableVertexAttribArray(2);
+				glBindBuffer(GL_ARRAY_BUFFER, normalbuffer3);
+				glVertexAttribPointer(
+					2,                                // attribute
+					3,                                // size
+					GL_FLOAT,                         // type
+					GL_FALSE,                         // normalized?
+					0,                                // stride
+					(void*)0                          // array buffer offset
+				);
 
-			// 3rd attribute buffer : normals
-			glEnableVertexAttribArray(2);
-			glBindBuffer(GL_ARRAY_BUFFER, normalbuffer3);
-			glVertexAttribPointer(
-				2,                                // attribute
-				3,                                // size
-				GL_FLOAT,                         // type
-				GL_FALSE,                         // normalized?
-				0,                                // stride
-				(void*)0                          // array buffer offset
-			);
+				// Index buffer
+				glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, elementbuffer3);
 
-			// Index buffer
-			glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, elementbuffer3);
-
-			// Draw the triangles
-			glDrawElements(GL_TRIANGLES, targetIndices.size(), GL_UNSIGNED_SHORT, (void*)0);
+				// Draw the triangles
+				glDrawElements(GL_TRIANGLES, targetIndices.size(), GL_UNSIGNED_SHORT, (void*)0);
+			}
 			i++;
 		}
 
