@@ -36,10 +36,23 @@ using namespace glm;
 #include "DebugDrawer.h"
 
 bool debugmode = false;
-int targetNum = 10; //5
-int bulletCount = 5; //2
+int targetNum = 10;
+int bulletCount = 5;
 int shots = 0;
 int gravity = -9.81f;
+btScalar desiredVelocity;
+
+std::vector<glm::vec3> targetPositions(targetNum);
+std::vector<glm::quat> targetOrientations(targetNum);
+std::vector<btRigidBody*> targetRigidBodies(targetNum);
+
+int wallNum = 6;
+std::vector<glm::vec3> wallPositions(wallNum);
+std::vector<glm::quat> wallOrientations(wallNum);
+
+std::vector<glm::vec3> bulletPositions(bulletCount);
+std::vector<glm::quat> bulletRotations(bulletCount);
+std::vector<btRigidBody*> bulletRigidBodies(bulletCount);
 
 void initialiseGame() {
 	string useDefault;
@@ -85,7 +98,7 @@ void initialiseGame() {
 					gravity = -1.6f;
 				}
 				else if (enteredGravity == "j") {
-					gravity = -24.8;
+					gravity = -24.8f;
 				}
 			}
 		}
@@ -96,6 +109,28 @@ void drawCrosshair() {
 	int windowWidth, windowHeight;
 	glfwGetWindowSize(window, &windowWidth, &windowHeight);
 
+}
+
+void myTickCallback(btDynamicsWorld *dynamicsWorld, btScalar timeStep) {
+	int numManifolds = dynamicsWorld->getDispatcher()->getNumManifolds();
+	for (int i = 0; i < numManifolds; i++)
+	{
+		btPersistentManifold* contactManifold = dynamicsWorld->getDispatcher()->getManifoldByIndexInternal(i);
+		const btCollisionObject *objA = contactManifold->getBody0();
+		const btCollisionObject *objB = contactManifold->getBody1();
+
+		int numContacts = contactManifold->getNumContacts();
+		for (int j = 0; j < numContacts; j++)
+		{
+			btManifoldPoint& pt = contactManifold->getContactPoint(j);
+			if (pt.getDistance() < 0.f)
+			{
+				const btVector3& ptA = pt.getPositionWorldOnA();
+				const btVector3& ptB = pt.getPositionWorldOnB();
+				const btVector3& normalOnB = pt.m_normalWorldOnB;
+			}
+		}
+	}
 }
 
 void generateTargets(std::vector<glm::vec3> &positions, std::vector<glm::quat> &orientations, int targetNum) {
@@ -399,21 +434,10 @@ int main()
 	srand(time(NULL));
 
 	// Generate positions & rotations for n targets
-	std::vector<glm::vec3> targetPositions(targetNum);
-	std::vector<glm::quat> targetOrientations(targetNum);
-	std::vector<btRigidBody*> targetRigidBodies(targetNum);
 	generateTargets(targetPositions, targetOrientations, targetNum);
 
 	// Generate room surface positions & rotations
-	int wallNum = 6;
-	std::vector<glm::vec3> wallPositions(wallNum);
-	std::vector<glm::quat> wallOrientations(wallNum);
 	generateWalls(wallPositions, wallOrientations);
-
-	// Generate bullet positions & rotations
-	std::vector<glm::vec3> bulletPositions(bulletCount);
-	std::vector<glm::quat> bulletRotations(bulletCount);
-	std::vector<btRigidBody*> bulletRigidBodies(bulletCount);
 
 	// Initialize Bullet
 
@@ -430,6 +454,8 @@ int main()
 	// The world
 	btDiscreteDynamicsWorld* dynamicsWorld = new btDiscreteDynamicsWorld(dispatcher, broadphase, solver, collisionConfiguration);
 	dynamicsWorld->setGravity(btVector3(0, gravity, 0));
+
+	dynamicsWorld->setInternalTickCallback(myTickCallback);
 
 	BulletDebugDrawer_OpenGL mydebugdrawer;
 	GLuint programID2 = LoadShaders("DebugVertexShader.vertexshader", "DebugFragmentShader.fragmentshader");
@@ -604,39 +630,12 @@ int main()
 		}
 		float deltaTime = currentTime - lastTime;
 
-		dynamicsWorld->performDiscreteCollisionDetection();
-
 		dynamicsWorld->stepSimulation(deltaTime, 7);
 
 		//// Step the simulation at an interval of 60hz
 		//dynamicsWorld->stepSimulation(1 / 60.f, 10);
 
-		//int numManifolds = dynamicsWorld->getDispatcher()->getNumManifolds();
-		//for (int i = 0; i < numManifolds; i++)
-		//{
-		//	btPersistentManifold* contactManifold = dynamicsWorld->getDispatcher()->getManifoldByIndexInternal(i);
-		//	const btCollisionObject *objA = contactManifold->getBody0();
-		//	const btCollisionObject *objB = contactManifold->getBody1();
-
-		//	int numContacts = contactManifold->getNumContacts();
-		//	for (int j = 0; j < numContacts; j++)
-		//	{
-		//		btManifoldPoint& pt = contactManifold->getContactPoint(j);
-		//		if (pt.getDistance() < 0.f)
-		//		{
-		//			const btVector3& ptA = pt.getPositionWorldOnA();
-		//			const btVector3& ptB = pt.getPositionWorldOnB();
-		//			const btVector3& normalOnB = pt.m_normalWorldOnB;
-
-		//			int rigidBodyIndex = objB->getUserIndex();
-		//			if (rigidBodyIndex <= targetNum - 1) {
-		//				cout << "Hit Target " << rigidBodyIndex << "!" << endl;
-		//				dynamicsWorld->removeRigidBody(rigidbodies[rigidBodyIndex]);
-		//				targetRigidBodies.at(rigidBodyIndex) = NULL;
-		//			}
-		//		}
-		//	}
-		//}
+		dynamicsWorld->performDiscreteCollisionDetection();
 
 		// Compute the MVP matrix from keyboard and mouse input
 		computeMatricesFromInputs();
@@ -677,7 +676,7 @@ int main()
 					cout << "Hit Wall " << rigidBodyIndex - targetNum << "!" << endl;
 				}
 				else if (rigidBodyIndex > (targetNum + wallNum - 1)) {
-					cout << "Hit Bullet!" << endl;
+					cout << "Hit Bullet! " << rigidBodyIndex - (targetNum + wallNum) << endl;
 				}
 			}
 			else {
@@ -766,10 +765,9 @@ int main()
 			mat4 inverseViewMatrix = inverse(ViewMatrix);
 			vec3 cameraPosition = vec3(inverseViewMatrix[3]);
 			vec3 cameraDirection = -vec3(inverseViewMatrix[2]);
-			vec3 offset = vec3(0.3, 0, -2);
 			vec3 newBulletPosition = cameraPosition + cameraDirection;
 
-			float bulletPower = 10.0f;
+			float bulletPower = 100.0f;
 			glm::vec3 bulletVelocity = cameraDirection * bulletPower;
 
 			bulletPositions[shots] = glm::vec3(newBulletPosition.x, newBulletPosition.y, newBulletPosition.z);
@@ -791,16 +789,20 @@ int main()
 
 			bulletRigidBodies[shots] = bulletRigidBody;
 			bulletRigidBody->setLinearVelocity(btVector3(bulletVelocity.x, bulletVelocity.y, bulletVelocity.z));
+			desiredVelocity = bulletRigidBody->getLinearVelocity().length();
 			bulletRigidBody->setRestitution(0.4);
+			//bulletRigidBody->setFriction(0);
+
+			// Check these settings
+			bulletRigidBody->setCcdMotionThreshold(1e-7);
+			bulletRigidBody->setCcdSweptSphereRadius(0.50);
 
 			bulletCount--;
 			shots++;
 
 			// To do:
-			// Start bullets from end of gun (offset newBulletPosition, set mass to 0 and don't move render bullet)
 			// Set correct velocity, bounce etc.
-			// Targets vanish on collision, bullets vanish when not moving
-			// Step simulation so that objects always collide
+			// Targets vanish on collision
 		}
 		lcOldState = lcNewState;
 
@@ -864,6 +866,14 @@ int main()
 
 			// Draw the triangles
 			glDrawElements(GL_TRIANGLES, bulletIndices.size(), GL_UNSIGNED_SHORT, (void*)0);
+
+			//btVector3 currentVelocityDirection = bulletRigidBodies[i]->getLinearVelocity();
+			//btScalar currentVelocty = currentVelocityDirection.length();
+			//if (currentVelocty < desiredVelocity)
+			//{
+			//	currentVelocityDirection *= desiredVelocity / currentVelocty;
+			//	bulletRigidBodies[i]->setLinearVelocity(currentVelocityDirection);
+			//}
 
 			btTransform bulletTrans;
 			bulletRigidBodies[i]->getMotionState()->getWorldTransform(bulletTrans);
