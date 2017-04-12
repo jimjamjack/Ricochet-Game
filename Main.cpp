@@ -41,6 +41,16 @@ int bulletCount = 5;
 int shots = 0;
 int gravity = -9.81f;
 btScalar desiredVelocity;
+btDiscreteDynamicsWorld* dynamicsWorld;
+int userIndexNum = 0;
+
+struct physicsObject {
+	int id;
+	string type;
+	bool hit;
+	btRigidBody* body;
+	physicsObject(btRigidBody* body, int id, string type) : body(body), id(id), type(type), hit(false) {}
+};
 
 std::vector<glm::vec3> targetPositions(targetNum);
 std::vector<glm::quat> targetOrientations(targetNum);
@@ -53,6 +63,8 @@ std::vector<glm::quat> wallOrientations(wallNum);
 std::vector<glm::vec3> bulletPositions(bulletCount);
 std::vector<glm::quat> bulletRotations(bulletCount);
 std::vector<btRigidBody*> bulletRigidBodies(bulletCount);
+
+std::vector<physicsObject*> rigidbodies;
 
 void initialiseGame() {
 	string useDefault;
@@ -128,6 +140,25 @@ void myTickCallback(btDynamicsWorld *dynamicsWorld, btScalar timeStep) {
 				const btVector3& ptA = pt.getPositionWorldOnA();
 				const btVector3& ptB = pt.getPositionWorldOnB();
 				const btVector3& normalOnB = pt.m_normalWorldOnB;
+
+				int rigidBodyIndex = objA->getUserIndex();
+
+				//// Try using the body's index - no luck
+				//if (rigidBodyIndex < targetNum) {
+				//	dynamicsWorld->removeRigidBody(rigidbodies[rigidBodyIndex]);
+				//	targetRigidBodies.at(rigidBodyIndex) = NULL;
+				//}
+
+				// Try using the body's pointer, which is:
+				// Target* target = new Target;
+				// *target = { userIndexNum };
+				// targetRigidBody->setUserPointer(target);
+				// - no luck either
+				//if (static_cast<Target*>(objA->getUserPointer())->id < targetNum) {
+				//	//dynamicsWorld->removeRigidBody(rigidbodies[static_cast<Target *>(objA->getUserPointer())->id]);
+				//	//targetRigidBodies.at(static_cast<Target *>(objA->getUserPointer())->id) = NULL;
+				//	cout << "ugh" << endl;
+				//}
 			}
 		}
 	}
@@ -226,10 +257,20 @@ void ScreenPosToWorldRay(
 //	}
 //}
 
+bool callbackFunction(btManifoldPoint& cp, const btCollisionObjectWrapper* colObj0Wrap, int partId0, int index0, const btCollisionObjectWrapper* colObj1Wrap, int partId1, int index1) {
+	//cout << colObj0Wrap->getCollisionObject()->getUserIndex() << " " << ((physicsObject*)colObj1Wrap->getCollisionObject()->getUserPointer())->id << endl;
+	cout << ((physicsObject*)colObj0Wrap->getCollisionObject()->getUserPointer())->type << " " << ((physicsObject*)colObj1Wrap->getCollisionObject()->getUserPointer())->type << endl;
+	//int rigidBodyIndex = colObj0Wrap->m_index;
+	//dynamicsWorld->removeRigidBody(rigidbodies[rigidBodyIndex]);
+	//targetRigidBodies.at(rigidBodyIndex) = NULL;
+	return false;
+}
+
 int main()
 {
 
 	initialiseGame();
+	gContactAddedCallback = callbackFunction;
 
 	// Initialise GLFW
 	if (!glfwInit())
@@ -452,7 +493,7 @@ int main()
 	btSequentialImpulseConstraintSolver* solver = new btSequentialImpulseConstraintSolver;
 
 	// The world
-	btDiscreteDynamicsWorld* dynamicsWorld = new btDiscreteDynamicsWorld(dispatcher, broadphase, solver, collisionConfiguration);
+	dynamicsWorld = new btDiscreteDynamicsWorld(dispatcher, broadphase, solver, collisionConfiguration);
 	dynamicsWorld->setGravity(btVector3(0, gravity, 0));
 
 	dynamicsWorld->setInternalTickCallback(myTickCallback);
@@ -463,8 +504,6 @@ int main()
 	if (debugmode) {
 		dynamicsWorld->setDebugDrawer(&mydebugdrawer);
 	}
-
-	std::vector<btRigidBody*> rigidbodies;
 
 	// Create a btTriangleIndexVertexArray
 	btTriangleIndexVertexArray* targetData = new btTriangleIndexVertexArray;
@@ -534,8 +573,6 @@ int main()
 	btVector3 bulletInertia(0, 0, 0);
 	bulletCollisionShape->calculateLocalInertia(bulletMass, bulletInertia);
 
-	int userIndexNum = 0;
-
 	for (int i = 0; i < targetNum; i++) {
 
 		btDefaultMotionState* targetMotionstate = new btDefaultMotionState(btTransform(
@@ -551,11 +588,12 @@ int main()
 		);
 		btRigidBody *targetRigidBody = new btRigidBody(targetRigidBodyCI);
 
-		rigidbodies.push_back(targetRigidBody);
+		rigidbodies.push_back(new physicsObject(targetRigidBody, userIndexNum, "Target"));
 		dynamicsWorld->addRigidBody(targetRigidBody);
 
 		// Store the mesh's index "i" in Bullet's User index
 		targetRigidBody->setUserIndex(userIndexNum);
+		targetRigidBody->setUserPointer(rigidbodies[rigidbodies.size()-1]);
 
 		targetRigidBodies[i] = targetRigidBody;
 
@@ -578,11 +616,14 @@ int main()
 			);
 			btRigidBody *wallRigidBody = new btRigidBody(wallRigidBodyCI);
 
-			rigidbodies.push_back(wallRigidBody);
+			rigidbodies.push_back(new physicsObject(wallRigidBody, userIndexNum, "Wall"));
 			dynamicsWorld->addRigidBody(wallRigidBody);
 
 			// Store the mesh's index "i" in Bullet's User index
 			wallRigidBody->setUserIndex(userIndexNum);
+			wallRigidBody->setUserPointer(rigidbodies[rigidbodies.size() - 1]);
+
+			wallRigidBody->setRestitution(0.9);
 		}
 		else {
 			btRigidBody::btRigidBodyConstructionInfo wallRigidBodyCI(
@@ -593,11 +634,12 @@ int main()
 			);
 			btRigidBody *wallRigidBody = new btRigidBody(wallRigidBodyCI);
 
-			rigidbodies.push_back(wallRigidBody);
+			rigidbodies.push_back(new physicsObject(wallRigidBody, userIndexNum, "Wall"));
 			dynamicsWorld->addRigidBody(wallRigidBody);
 
 			// Store the mesh's index "i" in Bullet's User index
 			wallRigidBody->setUserIndex(userIndexNum);
+			wallRigidBody->setUserPointer(rigidbodies[rigidbodies.size() - 1]);
 
 			wallRigidBody->setRestitution(0.9);
 		}
@@ -632,10 +674,19 @@ int main()
 
 		dynamicsWorld->stepSimulation(deltaTime, 7);
 
+		cout << rigidbodies.size() << endl;
+
 		//// Step the simulation at an interval of 60hz
 		//dynamicsWorld->stepSimulation(1 / 60.f, 10);
 
-		dynamicsWorld->performDiscreteCollisionDetection();
+		/*dynamicsWorld->performDiscreteCollisionDetection();
+		btCollisionWorld::ContactResultCallback resultCallback();
+
+		for (int i = 0; i < shots; i++) {
+			for (int j = 0; i < targetNum; j++) {
+				dynamicsWorld->contactPairTest(bulletRigidBodies[i], targetRigidBodies[j], resultCallback);
+			}
+		}*/
 
 		// Compute the MVP matrix from keyboard and mouse input
 		computeMatricesFromInputs();
@@ -669,7 +720,7 @@ int main()
 				int rigidBodyIndex = RayCallback.m_collisionObject->getUserIndex();
 				if (rigidBodyIndex <= targetNum - 1) {
 					cout << "Hit Target " << rigidBodyIndex << "!" << endl;
-					dynamicsWorld->removeRigidBody(rigidbodies[rigidBodyIndex]);
+					dynamicsWorld->removeRigidBody(rigidbodies[rigidBodyIndex]->body);
 					targetRigidBodies.at(rigidBodyIndex) = NULL;
 				}
 				else if (rigidBodyIndex > targetNum - 1 && rigidBodyIndex <= (targetNum + wallNum - 1)) {
@@ -781,13 +832,15 @@ int main()
 			btRigidBody::btRigidBodyConstructionInfo bulletRigidBodyCI(bulletMass, bulletMotionstate, bulletCollisionShape, bulletInertia);
 			bulletRigidBody = new btRigidBody(bulletRigidBodyCI);
 
-			rigidbodies.push_back(bulletRigidBody);
+			rigidbodies.push_back(new physicsObject(bulletRigidBody, userIndexNum, "Bullet"));
 			dynamicsWorld->addRigidBody(bulletRigidBody);
 			// Store the mesh's index "i" in Bullet's User index
 			bulletRigidBody->setUserIndex(userIndexNum);
+			bulletRigidBody->setUserPointer(rigidbodies[rigidbodies.size() - 1]);
 			userIndexNum++;
 
 			bulletRigidBodies[shots] = bulletRigidBody;
+			bulletRigidBody->setCollisionFlags(bulletRigidBody->getCollisionFlags() | btCollisionObject::CF_CUSTOM_MATERIAL_CALLBACK);
 			bulletRigidBody->setLinearVelocity(btVector3(bulletVelocity.x, bulletVelocity.y, bulletVelocity.z));
 			desiredVelocity = bulletRigidBody->getLinearVelocity().length();
 			bulletRigidBody->setRestitution(0.4);
@@ -1069,8 +1122,9 @@ int main()
 	// Clean up Bullet
 
 	for (int i = 0; i < rigidbodies.size(); i++) {
-		dynamicsWorld->removeRigidBody(rigidbodies[i]);
-		delete rigidbodies[i]->getMotionState();
+		dynamicsWorld->removeRigidBody(rigidbodies[i]->body);
+		delete rigidbodies[i]->body->getMotionState();
+		delete rigidbodies[i]->body;
 		delete rigidbodies[i];
 	}
 	delete targetMeshShape;
