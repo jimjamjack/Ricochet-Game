@@ -26,6 +26,7 @@ using namespace glm;
 
 // Include Bullet
 #include <btBulletDynamicsCommon.h>
+#include <btBulletCollisionCommon.h>
 #include <LinearMath/btIDebugDraw.h>
 
 // Include my files
@@ -35,9 +36,9 @@ using namespace glm;
 #include "Texture.h"
 #include "DebugDrawer.h"
 
-bool debugmode = false;
-int targetNum = 10;
-int bulletCount = 5;
+bool debugmode = true; // False
+int targetNum = 15; // 10
+int bulletCount = 15; // 10/2
 int shots = 0;
 int gravity = -9.81f;
 btScalar desiredVelocity;
@@ -65,6 +66,32 @@ std::vector<glm::quat> bulletRotations(bulletCount);
 std::vector<btRigidBody*> bulletRigidBodies(bulletCount);
 
 std::vector<physicsObject*> rigidbodies;
+
+//struct MyContactResultCallback : public btCollisionWorld::ContactResultCallback
+//{
+//	btScalar addSingleResult(btManifoldPoint& cp,
+//		const btCollisionObjectWrapper* colObj0Wrap,
+//		int partId0,
+//		int index0,
+//		const btCollisionObjectWrapper* colObj1Wrap,
+//		int partId1,
+//		int index1)
+//	{
+//		if (cp.getDistance() < 0.0f)
+//		{
+//
+//			int rigidBodyIndex = colObj0Wrap->getCollisionObject()->getUserIndex();
+//			cout << rigidBodyIndex << endl;
+//
+//			if (rigidBodyIndex < targetNum) {
+//				dynamicsWorld->removeRigidBody(rigidbodies[rigidBodyIndex]->body);
+//				targetRigidBodies.at(rigidBodyIndex) = NULL;
+//			}
+//		}
+//
+//		return 0;
+//	}
+//};
 
 void initialiseGame() {
 	string useDefault;
@@ -96,7 +123,14 @@ void initialiseGame() {
 					cin >> enteredNumber;
 				}
 				targetNum = enteredNumber;
+				targetPositions.resize(targetNum);
+				targetOrientations.resize(targetNum);
+				targetRigidBodies.resize(targetNum);
+
 				bulletCount = floor(targetNum / 2);
+				bulletPositions.resize(bulletCount);
+				bulletRotations.resize(bulletCount);
+				bulletRigidBodies.resize(bulletCount);
 				cin.ignore();
 			}
 
@@ -135,30 +169,30 @@ void myTickCallback(btDynamicsWorld *dynamicsWorld, btScalar timeStep) {
 		for (int j = 0; j < numContacts; j++)
 		{
 			btManifoldPoint& pt = contactManifold->getContactPoint(j);
-			if (pt.getDistance() < 0.f)
+			if (pt.getDistance() < 0.1f)
 			{
 				const btVector3& ptA = pt.getPositionWorldOnA();
 				const btVector3& ptB = pt.getPositionWorldOnB();
 				const btVector3& normalOnB = pt.m_normalWorldOnB;
 
-				int rigidBodyIndex = objA->getUserIndex();
+				int rigidBodyIndexA = ((physicsObject*)objA->getUserPointer())->id;
+				string rigidBodyTypeA = ((physicsObject*)objA->getUserPointer())->type;
+				int rigidBodyIndexB = ((physicsObject*)objB->getUserPointer())->id;
+				string rigidBodyTypeB = ((physicsObject*)objB->getUserPointer())->type;
 
-				//// Try using the body's index - no luck
-				//if (rigidBodyIndex < targetNum) {
-				//	dynamicsWorld->removeRigidBody(rigidbodies[rigidBodyIndex]);
-				//	targetRigidBodies.at(rigidBodyIndex) = NULL;
-				//}
+				if (rigidBodyTypeA == "Target" && rigidbodies[rigidBodyIndexA]->hit == false) {
+					rigidbodies[rigidBodyIndexA]->hit = true;
+					//dynamicsWorld->removeRigidBody(rigidbodies[rigidBodyIndexA]->body);
+					//targetRigidBodies.at(rigidBodyIndexA) = NULL;
+					////rigidbodies._Pop_back_n(rigidBodyIndexA); Is this needed?
+				}
 
-				// Try using the body's pointer, which is:
-				// Target* target = new Target;
-				// *target = { userIndexNum };
-				// targetRigidBody->setUserPointer(target);
-				// - no luck either
-				//if (static_cast<Target*>(objA->getUserPointer())->id < targetNum) {
-				//	//dynamicsWorld->removeRigidBody(rigidbodies[static_cast<Target *>(objA->getUserPointer())->id]);
-				//	//targetRigidBodies.at(static_cast<Target *>(objA->getUserPointer())->id) = NULL;
-				//	cout << "ugh" << endl;
-				//}
+				if (rigidBodyTypeB == "Target" && rigidbodies[rigidBodyIndexB]->hit == false) {
+					rigidbodies[rigidBodyIndexB]->hit = true;
+					//dynamicsWorld->removeRigidBody(rigidbodies[rigidBodyIndexB]->body);
+					//targetRigidBodies.at(rigidBodyIndexB) = NULL;
+					////rigidbodies._Pop_back_n(rigidBodyIndexB); Is this needed?
+				}
 			}
 		}
 	}
@@ -257,20 +291,38 @@ void ScreenPosToWorldRay(
 //	}
 //}
 
-bool callbackFunction(btManifoldPoint& cp, const btCollisionObjectWrapper* colObj0Wrap, int partId0, int index0, const btCollisionObjectWrapper* colObj1Wrap, int partId1, int index1) {
-	//cout << colObj0Wrap->getCollisionObject()->getUserIndex() << " " << ((physicsObject*)colObj1Wrap->getCollisionObject()->getUserPointer())->id << endl;
-	cout << ((physicsObject*)colObj0Wrap->getCollisionObject()->getUserPointer())->type << " " << ((physicsObject*)colObj1Wrap->getCollisionObject()->getUserPointer())->type << endl;
-	//int rigidBodyIndex = colObj0Wrap->m_index;
-	//dynamicsWorld->removeRigidBody(rigidbodies[rigidBodyIndex]);
-	//targetRigidBodies.at(rigidBodyIndex) = NULL;
-	return false;
-}
+//bool callbackFunction(btManifoldPoint& cp, const btCollisionObjectWrapper* colObj0Wrap, int partId0, int index0, const btCollisionObjectWrapper* colObj1Wrap, int partId1, int index1) {
+//	int rigidBodyIndexA = ((physicsObject*)colObj0Wrap->getCollisionObject()->getUserPointer())->id;
+//	string rigidBodyTypeA = ((physicsObject*)colObj0Wrap->getCollisionObject()->getUserPointer())->type;
+//	int rigidBodyIndexB = ((physicsObject*)colObj1Wrap->getCollisionObject()->getUserPointer())->id;
+//	string rigidBodyTypeB = ((physicsObject*)colObj1Wrap->getCollisionObject()->getUserPointer())->type;
+//
+//	if (cp.getDistance() < 0.1f)
+//	{
+//		cout << "A: " << rigidBodyTypeA << endl;
+//		cout << "B: " << rigidBodyTypeB << endl;
+//		if (rigidBodyTypeA == "Target" && rigidbodies[rigidBodyIndexA]->hit == false) {
+//			rigidbodies[rigidBodyIndexA]->hit = true;
+//			dynamicsWorld->removeRigidBody(rigidbodies[rigidBodyIndexA]->body);
+//			targetRigidBodies.at(rigidBodyIndexA) = NULL;
+//			//rigidbodies._Pop_back_n(rigidBodyIndexA);
+//		}
+//
+//		if (rigidBodyTypeB == "Target" && rigidbodies[rigidBodyIndexB]->hit == false) {
+//			rigidbodies[rigidBodyIndexB]->hit = true;
+//			dynamicsWorld->removeRigidBody(rigidbodies[rigidBodyIndexB]->body);
+//			targetRigidBodies.at(rigidBodyIndexB) = NULL;
+//			//rigidbodies._Pop_back_n(rigidBodyIndexB);
+//		}
+//	}
+//	return false;
+//}
 
 int main()
 {
 
 	initialiseGame();
-	gContactAddedCallback = callbackFunction;
+	//gContactAddedCallback = callbackFunction;
 
 	// Initialise GLFW
 	if (!glfwInit())
@@ -590,6 +642,7 @@ int main()
 
 		rigidbodies.push_back(new physicsObject(targetRigidBody, userIndexNum, "Target"));
 		dynamicsWorld->addRigidBody(targetRigidBody);
+		targetRigidBody->setCollisionFlags(targetRigidBody->getCollisionFlags() | btCollisionObject::CF_CUSTOM_MATERIAL_CALLBACK);
 
 		// Store the mesh's index "i" in Bullet's User index
 		targetRigidBody->setUserIndex(userIndexNum);
@@ -618,6 +671,7 @@ int main()
 
 			rigidbodies.push_back(new physicsObject(wallRigidBody, userIndexNum, "Wall"));
 			dynamicsWorld->addRigidBody(wallRigidBody);
+			wallRigidBody->setCollisionFlags(wallRigidBody->getCollisionFlags() | btCollisionObject::CF_CUSTOM_MATERIAL_CALLBACK);
 
 			// Store the mesh's index "i" in Bullet's User index
 			wallRigidBody->setUserIndex(userIndexNum);
@@ -636,6 +690,7 @@ int main()
 
 			rigidbodies.push_back(new physicsObject(wallRigidBody, userIndexNum, "Wall"));
 			dynamicsWorld->addRigidBody(wallRigidBody);
+			wallRigidBody->setCollisionFlags(wallRigidBody->getCollisionFlags() | btCollisionObject::CF_CUSTOM_MATERIAL_CALLBACK);
 
 			// Store the mesh's index "i" in Bullet's User index
 			wallRigidBody->setUserIndex(userIndexNum);
@@ -674,19 +729,25 @@ int main()
 
 		dynamicsWorld->stepSimulation(deltaTime, 7);
 
-		cout << rigidbodies.size() << endl;
-
 		//// Step the simulation at an interval of 60hz
 		//dynamicsWorld->stepSimulation(1 / 60.f, 10);
 
-		/*dynamicsWorld->performDiscreteCollisionDetection();
-		btCollisionWorld::ContactResultCallback resultCallback();
+		//dynamicsWorld->performDiscreteCollisionDetection();
+		//MyContactResultCallback callback;
 
-		for (int i = 0; i < shots; i++) {
-			for (int j = 0; i < targetNum; j++) {
-				dynamicsWorld->contactPairTest(bulletRigidBodies[i], targetRigidBodies[j], resultCallback);
+		//for (int i = 0; i < shots; i++) {
+		//	for (int j = 0; i < targetNum; j++) {
+		//		dynamicsWorld->contactPairTest(bulletRigidBodies[i], targetRigidBodies[j], callback);
+		//	}
+		//}
+
+		for (auto physicsObject : rigidbodies) {
+			if (physicsObject->hit == true) {
+				dynamicsWorld->removeRigidBody(rigidbodies[physicsObject->id]->body);
+				targetRigidBodies.at(physicsObject->id) = NULL;
+				//rigidbodies._Pop_back_n(rigidBodyIndexB); Is this needed?
 			}
-		}*/
+		}
 
 		// Compute the MVP matrix from keyboard and mouse input
 		computeMatricesFromInputs();
@@ -840,6 +901,7 @@ int main()
 			userIndexNum++;
 
 			bulletRigidBodies[shots] = bulletRigidBody;
+			//
 			bulletRigidBody->setCollisionFlags(bulletRigidBody->getCollisionFlags() | btCollisionObject::CF_CUSTOM_MATERIAL_CALLBACK);
 			bulletRigidBody->setLinearVelocity(btVector3(bulletVelocity.x, bulletVelocity.y, bulletVelocity.z));
 			desiredVelocity = bulletRigidBody->getLinearVelocity().length();
