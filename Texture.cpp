@@ -6,8 +6,10 @@
 
 #include <GLFW/glfw3.h>
 
+#include "Texture.h"
 
-GLuint loadBMP_custom(const char * imagepath) {
+
+GLuint loadTexture(const char * imagepath) {
 
 	printf("Reading image %s\n", imagepath);
 

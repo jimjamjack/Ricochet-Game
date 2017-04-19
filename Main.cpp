@@ -67,33 +67,7 @@ std::vector<btRigidBody*> bulletRigidBodies(bulletCount);
 
 std::vector<physicsObject*> rigidbodies;
 
-//struct MyContactResultCallback : public btCollisionWorld::ContactResultCallback
-//{
-//	btScalar addSingleResult(btManifoldPoint& cp,
-//		const btCollisionObjectWrapper* colObj0Wrap,
-//		int partId0,
-//		int index0,
-//		const btCollisionObjectWrapper* colObj1Wrap,
-//		int partId1,
-//		int index1)
-//	{
-//		if (cp.getDistance() < 0.0f)
-//		{
-//
-//			int rigidBodyIndex = colObj0Wrap->getCollisionObject()->getUserIndex();
-//			cout << rigidBodyIndex << endl;
-//
-//			if (rigidBodyIndex < targetNum) {
-//				dynamicsWorld->removeRigidBody(rigidbodies[rigidBodyIndex]->body);
-//				targetRigidBodies.at(rigidBodyIndex) = NULL;
-//			}
-//		}
-//
-//		return 0;
-//	}
-//};
-
-void initialiseGame() {
+void gameSetUp() {
 	string useDefault;
 	string useDebug;
 	int enteredNumber = 0;
@@ -151,13 +125,59 @@ void initialiseGame() {
 	}
 }
 
-void drawCrosshair() {
+void initialiseGLFWWindow() {
+	// Initialise GLFW
+	if (!glfwInit())
+	{
+		printf("Failed to initialize GLFW.\n");
+		getchar();
+	}
+
+	glfwWindowHint(GLFW_SAMPLES, 4); // 4x antialiasing
+	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_COMPAT_PROFILE);
+	glfwWindowHint(GLFW_RESIZABLE, false);
+
+	// Open a window and create its OpenGL context
+	window = glfwCreateWindow(1024, 768, "Ricochet Game", NULL, NULL);
+	if (window == NULL) {
+		cout << "Failed to open GLFW window" << endl;
+		glfwTerminate();
+	}
+	glfwMakeContextCurrent(window);
+
+	// Initialize GLEW
+	if (glewInit() != GLEW_OK) {
+		cout << "Failed to initialize GLEW" << endl;
+		glfwTerminate();
+	}
+
 	int windowWidth, windowHeight;
 	glfwGetWindowSize(window, &windowWidth, &windowHeight);
 
+	// Ensure we can capture the escape key being pressed (key remains in GLFW_PRESS state until glfwGetKey)
+	glfwSetInputMode(window, GLFW_STICKY_KEYS, GL_TRUE);
+
+	// Create a crosshair and use it as the default cursor
+	//glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+	GLFWcursor* crosshairCursor = glfwCreateStandardCursor(GLFW_CROSSHAIR_CURSOR);
+	glfwSetCursor(window, crosshairCursor);
+
+	// Set the mouse at the center of the screen
+	glfwPollEvents();
+	glfwSetCursorPos(window, windowWidth / 2, windowHeight / 2);
+
+	// Basic grey background
+	glClearColor(0.827f, 0.827f, 0.827f, 0.0f);
+
+	// Enable depth test so drawn triangles don't overlap
+	glEnable(GL_DEPTH_TEST);
+	// Accept fragment if it's closer to the camera than the former one
+	glDepthFunc(GL_LESS);
 }
 
-void myTickCallback(btDynamicsWorld *dynamicsWorld, btScalar timeStep) {
+void contactTickCallback(btDynamicsWorld *dynamicsWorld, btScalar timeStep) {
 	int numManifolds = dynamicsWorld->getDispatcher()->getNumManifolds();
 	for (int i = 0; i < numManifolds; i++)
 	{
@@ -168,13 +188,9 @@ void myTickCallback(btDynamicsWorld *dynamicsWorld, btScalar timeStep) {
 		int numContacts = contactManifold->getNumContacts();
 		for (int j = 0; j < numContacts; j++)
 		{
-			btManifoldPoint& pt = contactManifold->getContactPoint(j);
-			if (pt.getDistance() < 0.1f)
+			btManifoldPoint& contactPoint = contactManifold->getContactPoint(j);
+			if (contactPoint.getDistance() < 0.1f)
 			{
-				const btVector3& ptA = pt.getPositionWorldOnA();
-				const btVector3& ptB = pt.getPositionWorldOnB();
-				const btVector3& normalOnB = pt.m_normalWorldOnB;
-
 				int rigidBodyIndexA = ((physicsObject*)objA->getUserPointer())->id;
 				string rigidBodyTypeA = ((physicsObject*)objA->getUserPointer())->type;
 				int rigidBodyIndexB = ((physicsObject*)objB->getUserPointer())->id;
@@ -182,16 +198,10 @@ void myTickCallback(btDynamicsWorld *dynamicsWorld, btScalar timeStep) {
 
 				if (rigidBodyTypeA == "Target" && rigidbodies[rigidBodyIndexA]->hit == false) {
 					rigidbodies[rigidBodyIndexA]->hit = true;
-					//dynamicsWorld->removeRigidBody(rigidbodies[rigidBodyIndexA]->body);
-					//targetRigidBodies.at(rigidBodyIndexA) = NULL;
-					////rigidbodies._Pop_back_n(rigidBodyIndexA); Is this needed?
 				}
 
 				if (rigidBodyTypeB == "Target" && rigidbodies[rigidBodyIndexB]->hit == false) {
 					rigidbodies[rigidBodyIndexB]->hit = true;
-					//dynamicsWorld->removeRigidBody(rigidbodies[rigidBodyIndexB]->body);
-					//targetRigidBodies.at(rigidBodyIndexB) = NULL;
-					////rigidbodies._Pop_back_n(rigidBodyIndexB); Is this needed?
 				}
 			}
 		}
@@ -241,162 +251,67 @@ void generateWalls(std::vector<glm::vec3> &positions, std::vector<glm::quat> &or
 	orientations[5] = glm::normalize(glm::quat(glm::vec3(0, 0, 0)));
 }
 
-void ScreenPosToWorldRay(
-	int mouseX, int mouseY,             // Mouse position, in pixels, from bottom-left corner of the window
-	int screenWidth, int screenHeight,  // Window size, in pixels
-	glm::mat4 ViewMatrix,               // Camera position and orientation
-	glm::mat4 ProjectionMatrix,         // Camera parameters (ratio, field of view, near and far planes)
-	glm::vec3& out_origin,              // Ouput : Origin of the ray.
-	glm::vec3& out_direction            // Ouput : Direction, in world space, of the ray that goes "through" the mouse.
-) {
+void VBOLoader(GLuint &indicesBuffer, GLuint &vertexBuffer, GLuint &uvBuffer, GLuint &normalBuffer, 
+	std::vector<unsigned short> &indices, std::vector<glm::vec3> &vertices, std::vector<glm::vec2> &uvs, std::vector<glm::vec3> &normals) {
 
-	// The ray Start and End positions, in Normalized Device Coordinates
-	glm::vec4 lRayStart_NDC(
-		((float)mouseX / (float)screenWidth - 0.5f) * 2.0f, // [0,1024] -> [-1,1]
-		((float)mouseY / (float)screenHeight - 0.5f) * 2.0f, // [0, 768] -> [-1,1]
-		-1.0, // The near plane maps to Z=-1 in Normalized Device Coordinates
-		1.0f
-	);
-	glm::vec4 lRayEnd_NDC(
-		((float)mouseX / (float)screenWidth - 0.5f) * 2.0f,
-		((float)mouseY / (float)screenHeight - 0.5f) * 2.0f,
-		0.0,
-		1.0f
-	);
+	glGenBuffers(1, &indicesBuffer);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, indicesBuffer);
+	glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(unsigned short), &indices[0], GL_STATIC_DRAW);
 
-	// The Projection matrix goes from Camera Space to NDC.
-	// So inverse(ProjectionMatrix) goes from NDC to Camera Space.
-	glm::mat4 InverseProjectionMatrix = glm::inverse(ProjectionMatrix);
+	glGenBuffers(1, &vertexBuffer);
+	glBindBuffer(GL_ARRAY_BUFFER, vertexBuffer);
+	glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(glm::vec3), &vertices[0], GL_STATIC_DRAW);
 
-	// The View Matrix goes from World Space to Camera Space.
-	// So inverse(ViewMatrix) goes from Camera Space to World Space.
-	glm::mat4 InverseViewMatrix = glm::inverse(ViewMatrix);
+	glGenBuffers(1, &uvBuffer);
+	glBindBuffer(GL_ARRAY_BUFFER, uvBuffer);
+	glBufferData(GL_ARRAY_BUFFER, uvs.size() * sizeof(glm::vec2), &uvs[0], GL_STATIC_DRAW);
 
-	glm::vec4 lRayStart_camera = InverseProjectionMatrix * lRayStart_NDC;    lRayStart_camera /= lRayStart_camera.w;
-	glm::vec4 lRayStart_world = InverseViewMatrix       * lRayStart_camera; lRayStart_world /= lRayStart_world.w;
-	glm::vec4 lRayEnd_camera = InverseProjectionMatrix * lRayEnd_NDC;      lRayEnd_camera /= lRayEnd_camera.w;
-	glm::vec4 lRayEnd_world = InverseViewMatrix       * lRayEnd_camera;   lRayEnd_world /= lRayEnd_world.w;
-
-	glm::vec3 lRayDir_world(lRayEnd_world - lRayStart_world);
-	lRayDir_world = glm::normalize(lRayDir_world);
-
-	out_origin = glm::vec3(lRayStart_world);
-	out_direction = glm::normalize(lRayDir_world);
+	glGenBuffers(1, &normalBuffer);
+	glBindBuffer(GL_ARRAY_BUFFER, normalBuffer);
+	glBufferData(GL_ARRAY_BUFFER, normals.size() * sizeof(glm::vec3), &normals[0], GL_STATIC_DRAW);
 }
 
-//void mouse_button_callback(GLFWwindow* window, int button, int action, int mods)
-//{
-//	if (button == GLFW_MOUSE_BUTTON_RIGHT && action == GLFW_PRESS) {
-//		printf("\nRight Click");
-//	}
-//}
+void handleCounters() {
+	int targetCount = 0;
 
-//bool callbackFunction(btManifoldPoint& cp, const btCollisionObjectWrapper* colObj0Wrap, int partId0, int index0, const btCollisionObjectWrapper* colObj1Wrap, int partId1, int index1) {
-//	int rigidBodyIndexA = ((physicsObject*)colObj0Wrap->getCollisionObject()->getUserPointer())->id;
-//	string rigidBodyTypeA = ((physicsObject*)colObj0Wrap->getCollisionObject()->getUserPointer())->type;
-//	int rigidBodyIndexB = ((physicsObject*)colObj1Wrap->getCollisionObject()->getUserPointer())->id;
-//	string rigidBodyTypeB = ((physicsObject*)colObj1Wrap->getCollisionObject()->getUserPointer())->type;
-//
-//	if (cp.getDistance() < 0.1f)
-//	{
-//		cout << "A: " << rigidBodyTypeA << endl;
-//		cout << "B: " << rigidBodyTypeB << endl;
-//		if (rigidBodyTypeA == "Target" && rigidbodies[rigidBodyIndexA]->hit == false) {
-//			rigidbodies[rigidBodyIndexA]->hit = true;
-//			dynamicsWorld->removeRigidBody(rigidbodies[rigidBodyIndexA]->body);
-//			targetRigidBodies.at(rigidBodyIndexA) = NULL;
-//			//rigidbodies._Pop_back_n(rigidBodyIndexA);
-//		}
-//
-//		if (rigidBodyTypeB == "Target" && rigidbodies[rigidBodyIndexB]->hit == false) {
-//			rigidbodies[rigidBodyIndexB]->hit = true;
-//			dynamicsWorld->removeRigidBody(rigidbodies[rigidBodyIndexB]->body);
-//			targetRigidBodies.at(rigidBodyIndexB) = NULL;
-//			//rigidbodies._Pop_back_n(rigidBodyIndexB);
-//		}
-//	}
-//	return false;
-//}
+	for (auto physicsObject : rigidbodies) {
+		if (physicsObject->type == "Target" && targetRigidBodies.at(physicsObject->id) != NULL) {
+			targetCount++;
+		}
+		if (physicsObject->hit == true) {
+			dynamicsWorld->removeRigidBody(rigidbodies[physicsObject->id]->body);
+			targetRigidBodies.at(physicsObject->id) = NULL;
+		}
+	}
+
+	string bulletCounter = string(2 - to_string(bulletCount).length(), '0') + to_string(bulletCount);
+	string targetCounter = string(2 - to_string(targetCount).length(), '0') + to_string(targetCount);
+	string counter = "Bullet Count: " + bulletCounter + " - Target Count: " + targetCounter;
+	cout << counter;
+	cout << string(counter.length(), '\b');
+}
 
 int main()
 {
 
-	initialiseGame();
-	//gContactAddedCallback = callbackFunction;
-
-	// Initialise GLFW
-	if (!glfwInit())
-	{
-		printf("Failed to initialize GLFW.\n");
-		getchar();
-		return -1;
-	}
-
-	glfwWindowHint(GLFW_SAMPLES, 4); // 4x antialiasing
-	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
-	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_COMPAT_PROFILE);
-	glfwWindowHint(GLFW_RESIZABLE, false);
-
-	// Open a window and create its OpenGL context
-	window = glfwCreateWindow(1024, 768, "Ricochet Game", NULL, NULL);
-	if (window == NULL) {
-		printf("Failed to open GLFW window.\n");
-		getchar();
-		glfwTerminate();
-		return -1;
-	}
-	glfwMakeContextCurrent(window);
-
-	// Initialize GLEW
-	if (glewInit() != GLEW_OK) {
-		printf("Failed to initialize GLEW.\n");
-		getchar();
-		glfwTerminate();
-		return -1;
-	}
+	gameSetUp();
+	initialiseGLFWWindow();
 
 	int windowWidth, windowHeight;
 	glfwGetWindowSize(window, &windowWidth, &windowHeight);
 
-	// Ensure we can capture the escape key being pressed (key remains in GLFW_PRESS state until glfwGetKey)
-	glfwSetInputMode(window, GLFW_STICKY_KEYS, GL_TRUE);
-
-	// Create a crosshair and use it as the default cursor
-	//glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
-	GLFWcursor* crosshairCursor = glfwCreateStandardCursor(GLFW_CROSSHAIR_CURSOR);
-	glfwSetCursor(window, crosshairCursor);
-
-	// Tell GLFW what to do on left click
-	//glfwSetMouseButtonCallback(window, mouse_button_callback);
-
-	// Set the mouse at the center of the screen
-	glfwPollEvents();
-	glfwSetCursorPos(window, windowWidth / 2, windowHeight / 2);
-
-	// Basic grey background
-	glClearColor(0.827f, 0.827f, 0.827f, 0.0f);
-
-	// Enable depth test so drawn triangles don't overlap
-	glEnable(GL_DEPTH_TEST);
-	// Accept fragment if it's closer to the camera than the former one
-	glDepthFunc(GL_LESS);
-
 	GLuint VertexArrayID;
-	glGenVertexArrays(
-		1,				// Number of vertex array object names to generate
-		&VertexArrayID  // Specifies an array in which the generated vertex array object names are stored
-	);
+	glGenVertexArrays(1, &VertexArrayID);
 	glBindVertexArray(VertexArrayID);
 
 	// Create and compile the GLSL program from the shaders
 	GLuint programID = LoadShaders("TransformVertexShader.vertexshader", "TextureFragmentShader.fragmentshader");
 
 	// Load the textures
-	GLuint roomTexture = loadBMP_custom("roomTexture.bmp");
-	GLuint bulletTexture = loadBMP_custom("bulletTexture.bmp");
-	GLuint targetTexture = loadBMP_custom("targetTexture.bmp");
-	GLuint gunTexture = loadBMP_custom("gunTexture.bmp");
+	GLuint roomTexture = loadTexture("roomTexture.bmp");
+	GLuint bulletTexture = loadTexture("bulletTexture.bmp");
+	GLuint targetTexture = loadTexture("targetTexture.bmp");
+	GLuint gunTexture = loadTexture("gunTexture.bmp");
 
 	// Get a handle for our "myTextureSampler" uniform
 	GLuint TextureID = glGetUniformLocation(programID, "myTextureSampler");
@@ -413,11 +328,25 @@ int main()
 	std::vector<glm::vec3> roomNormals;
 	bool res = loadAssImp("room.obj", roomIndices, roomVertices, roomUvs, roomNormals);
 
+	GLuint roomIndiceBuffer;
+	GLuint roomVertexBuffer;
+	GLuint roomUVBuffer;
+	GLuint roomNormalBuffer;
+	VBOLoader(roomIndiceBuffer, roomVertexBuffer, roomUVBuffer, roomNormalBuffer,
+		roomIndices, roomVertices, roomUvs, roomNormals);
+
 	std::vector<unsigned short> bulletIndices;
 	std::vector<glm::vec3> bulletVertices;
 	std::vector<glm::vec2> bulletUvs;
 	std::vector<glm::vec3> bulletNormals;
 	res = loadAssImp("bullet.obj", bulletIndices, bulletVertices, bulletUvs, bulletNormals);
+
+	GLuint bulletIndiceBuffer;
+	GLuint bulletVertexBuffer;
+	GLuint bulletUVBuffer;
+	GLuint bulletNormalBuffer;
+	VBOLoader(bulletIndiceBuffer, bulletVertexBuffer, bulletUVBuffer, bulletNormalBuffer,
+		bulletIndices, bulletVertices, bulletUvs, bulletNormals);
 
 	std::vector<unsigned short> targetIndices;
 	std::vector<glm::vec3> targetVertices;
@@ -425,103 +354,25 @@ int main()
 	std::vector<glm::vec3> targetNormals;
 	res = loadAssImp("target2.obj", targetIndices, targetVertices, targetUvs, targetNormals);
 
+	GLuint targetIndiceBuffer;
+	GLuint targetVertexBuffer;
+	GLuint targetUVBuffer;
+	GLuint targetNormalBuffer;
+	VBOLoader(targetIndiceBuffer, targetVertexBuffer, targetUVBuffer, targetNormalBuffer,
+		targetIndices, targetVertices, targetUvs, targetNormals);
+
 	std::vector<unsigned short> gunIndices;
 	std::vector<glm::vec3> gunVertices;
 	std::vector<glm::vec2> gunUvs;
 	std::vector<glm::vec3> gunNormals;
 	res = loadAssImp("gun2.obj", gunIndices, gunVertices, gunUvs, gunNormals);
 
-	// Load it into a VBO
-	// First object
-
-	GLuint vertexbuffer;
-	glGenBuffers(1, &vertexbuffer);
-	glBindBuffer(GL_ARRAY_BUFFER, vertexbuffer);
-	glBufferData(GL_ARRAY_BUFFER, roomVertices.size() * sizeof(glm::vec3), &roomVertices[0], GL_STATIC_DRAW);
-
-	GLuint uvbuffer;
-	glGenBuffers(1, &uvbuffer);
-	glBindBuffer(GL_ARRAY_BUFFER, uvbuffer);
-	glBufferData(GL_ARRAY_BUFFER, roomUvs.size() * sizeof(glm::vec2), &roomUvs[0], GL_STATIC_DRAW);
-
-	GLuint normalbuffer;
-	glGenBuffers(1, &normalbuffer);
-	glBindBuffer(GL_ARRAY_BUFFER, normalbuffer);
-	glBufferData(GL_ARRAY_BUFFER, roomNormals.size() * sizeof(glm::vec3), &roomNormals[0], GL_STATIC_DRAW);
-
-	// Generate a buffer for the indices as well
-	GLuint elementbuffer;
-	glGenBuffers(1, &elementbuffer);
-	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, elementbuffer);
-	glBufferData(GL_ELEMENT_ARRAY_BUFFER, roomIndices.size() * sizeof(unsigned short), &roomIndices[0], GL_STATIC_DRAW);
-
-	// Second object
-	GLuint vertexbuffer2;
-	glGenBuffers(1, &vertexbuffer2);
-	glBindBuffer(GL_ARRAY_BUFFER, vertexbuffer2);
-	glBufferData(GL_ARRAY_BUFFER, bulletVertices.size() * sizeof(glm::vec3), &bulletVertices[0], GL_STATIC_DRAW);
-
-	GLuint uvbuffer2;
-	glGenBuffers(1, &uvbuffer2);
-	glBindBuffer(GL_ARRAY_BUFFER, uvbuffer2);
-	glBufferData(GL_ARRAY_BUFFER, bulletUvs.size() * sizeof(glm::vec2), &bulletUvs[0], GL_STATIC_DRAW);
-
-	GLuint normalbuffer2;
-	glGenBuffers(1, &normalbuffer2);
-	glBindBuffer(GL_ARRAY_BUFFER, normalbuffer2);
-	glBufferData(GL_ARRAY_BUFFER, bulletNormals.size() * sizeof(glm::vec3), &bulletNormals[0], GL_STATIC_DRAW);
-
-	// Generate a buffer for the indices as well
-	GLuint elementbuffer2;
-	glGenBuffers(1, &elementbuffer2);
-	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, elementbuffer2);
-	glBufferData(GL_ELEMENT_ARRAY_BUFFER, bulletIndices.size() * sizeof(unsigned short), &bulletIndices[0], GL_STATIC_DRAW);
-
-	// Third object
-
-	GLuint vertexbuffer3;
-	glGenBuffers(1, &vertexbuffer3);
-	glBindBuffer(GL_ARRAY_BUFFER, vertexbuffer3);
-	glBufferData(GL_ARRAY_BUFFER, targetVertices.size() * sizeof(glm::vec3), &targetVertices[0], GL_STATIC_DRAW);
-
-	GLuint uvbuffer3;
-	glGenBuffers(1, &uvbuffer3);
-	glBindBuffer(GL_ARRAY_BUFFER, uvbuffer3);
-	glBufferData(GL_ARRAY_BUFFER, targetUvs.size() * sizeof(glm::vec2), &targetUvs[0], GL_STATIC_DRAW);
-
-	GLuint normalbuffer3;
-	glGenBuffers(1, &normalbuffer3);
-	glBindBuffer(GL_ARRAY_BUFFER, normalbuffer3);
-	glBufferData(GL_ARRAY_BUFFER, targetNormals.size() * sizeof(glm::vec3), &targetNormals[0], GL_STATIC_DRAW);
-
-	// Generate a buffer for the indices as well
-	GLuint elementbuffer3;
-	glGenBuffers(1, &elementbuffer3);
-	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, elementbuffer3);
-	glBufferData(GL_ELEMENT_ARRAY_BUFFER, targetIndices.size() * sizeof(unsigned short), &targetIndices[0], GL_STATIC_DRAW);
-
-	// fourth object
-
-	GLuint vertexbuffer4;
-	glGenBuffers(1, &vertexbuffer4);
-	glBindBuffer(GL_ARRAY_BUFFER, vertexbuffer4);
-	glBufferData(GL_ARRAY_BUFFER, gunVertices.size() * sizeof(glm::vec3), &gunVertices[0], GL_STATIC_DRAW);
-
-	GLuint uvbuffer4;
-	glGenBuffers(1, &uvbuffer4);
-	glBindBuffer(GL_ARRAY_BUFFER, uvbuffer4);
-	glBufferData(GL_ARRAY_BUFFER, gunUvs.size() * sizeof(glm::vec2), &gunUvs[0], GL_STATIC_DRAW);
-
-	GLuint normalbuffer4;
-	glGenBuffers(1, &normalbuffer4);
-	glBindBuffer(GL_ARRAY_BUFFER, normalbuffer4);
-	glBufferData(GL_ARRAY_BUFFER, gunNormals.size() * sizeof(glm::vec3), &gunNormals[0], GL_STATIC_DRAW);
-
-	// Generate a buffer for the indices as well
-	GLuint elementbuffer4;
-	glGenBuffers(1, &elementbuffer4);
-	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, elementbuffer4);
-	glBufferData(GL_ELEMENT_ARRAY_BUFFER, gunIndices.size() * sizeof(unsigned short), &gunIndices[0], GL_STATIC_DRAW);
+	GLuint gunIndiceBuffer;
+	GLuint gunVertexBuffer;
+	GLuint gunUVBuffer;
+	GLuint gunNormalBuffer;
+	VBOLoader(gunIndiceBuffer, gunVertexBuffer, gunUVBuffer, gunNormalBuffer,
+		gunIndices, gunVertices, gunUvs, gunNormals);
 
 	// Seed the rand() function for more random results
 	srand(time(NULL));
@@ -548,7 +399,7 @@ int main()
 	dynamicsWorld = new btDiscreteDynamicsWorld(dispatcher, broadphase, solver, collisionConfiguration);
 	dynamicsWorld->setGravity(btVector3(0, gravity, 0));
 
-	dynamicsWorld->setInternalTickCallback(myTickCallback);
+	dynamicsWorld->setInternalTickCallback(contactTickCallback);
 
 	BulletDebugDrawer_OpenGL mydebugdrawer;
 	GLuint programID2 = LoadShaders("DebugVertexShader.vertexshader", "DebugFragmentShader.fragmentshader");
@@ -571,18 +422,11 @@ int main()
 	const int32_t VERTICES_PER_TRIANGLE = 3;
 	size_t numIndices = targetIndices.size();
 	mesh.m_numTriangles = numIndices / VERTICES_PER_TRIANGLE;
-	if (numIndices < std::numeric_limits<int16_t>::max()) {
-		// we can use 16-bit indices
-		mesh.m_triangleIndexBase = new unsigned char[sizeof(int16_t) * (size_t)numIndices];
-		mesh.m_indexType = PHY_SHORT;
-		mesh.m_triangleIndexStride = VERTICES_PER_TRIANGLE * sizeof(int16_t);
-	}
-	else {
-		// we need 32-bit indices
-		mesh.m_triangleIndexBase = new unsigned char[sizeof(int32_t) * (size_t)numIndices];
-		mesh.m_indexType = PHY_INTEGER;
-		mesh.m_triangleIndexStride = VERTICES_PER_TRIANGLE * sizeof(int32_t);
-	}
+
+	mesh.m_triangleIndexBase = new unsigned char[sizeof(int32_t) * (size_t)numIndices];
+	mesh.m_indexType = PHY_INTEGER;
+	mesh.m_triangleIndexStride = VERTICES_PER_TRIANGLE * sizeof(int32_t);
+
 	mesh.m_numVertices = targetVertices.size();
 	mesh.m_vertexBase = new unsigned char[VERTICES_PER_TRIANGLE * sizeof(btScalar) * (size_t)mesh.m_numVertices];
 	mesh.m_vertexStride = VERTICES_PER_TRIANGLE * sizeof(btScalar);
@@ -597,24 +441,13 @@ int main()
 		vertexData[j + 2] = point.z;
 	}
 	// Copy indices into mesh
-	if (numIndices < std::numeric_limits<int16_t>::max()) {
-		// 16-bit case
-		int16_t* indices = static_cast<int16_t*>((void*)(mesh.m_triangleIndexBase));
-		for (int32_t i = 0; i < numIndices; ++i) {
-			indices[i] = (int16_t)targetIndices[i];
-		}
-	}
-	else {
-		// 32-bit case
-		int32_t* indices = static_cast<int32_t*>((void*)(mesh.m_triangleIndexBase));
-		for (int32_t i = 0; i < numIndices; ++i) {
-			indices[i] = targetIndices[i];
-		}
+	int32_t* indices = static_cast<int32_t*>((void*)(mesh.m_triangleIndexBase));
+	for (int32_t i = 0; i < numIndices; ++i) {
+		indices[i] = (int32_t)targetIndices[i];
 	}
 
 	// Create the shape
-	const bool USE_QUANTIZED_AABB_COMPRESSION = true;
-	btBvhTriangleMeshShape* targetMeshShape = new btBvhTriangleMeshShape(targetData, USE_QUANTIZED_AABB_COMPRESSION);
+	btBvhTriangleMeshShape* targetMeshShape = new btBvhTriangleMeshShape(targetData, true);
 
 	btCollisionShape* wallCollisionShape = new btBoxShape(btVector3(8.4f, 4.7f, 0.1f));
 
@@ -632,20 +465,14 @@ int main()
 			btVector3(targetPositions[i].x, targetPositions[i].y, targetPositions[i].z)
 		));
 
-		btRigidBody::btRigidBodyConstructionInfo targetRigidBodyCI(
-			0,                  // mass, in kg. 0 -> Static object, will never move.
-			targetMotionstate,
-			targetMeshShape,  // collision shape of body
-			btVector3(0, 0, 0)    // local inertia
-		);
+		btRigidBody::btRigidBodyConstructionInfo targetRigidBodyCI(0, targetMotionstate, targetMeshShape, btVector3(0, 0, 0));
 		btRigidBody *targetRigidBody = new btRigidBody(targetRigidBodyCI);
 
 		rigidbodies.push_back(new physicsObject(targetRigidBody, userIndexNum, "Target"));
 		dynamicsWorld->addRigidBody(targetRigidBody);
-		targetRigidBody->setCollisionFlags(targetRigidBody->getCollisionFlags() | btCollisionObject::CF_CUSTOM_MATERIAL_CALLBACK);
+		targetRigidBody->setRestitution(0.9);
 
 		// Store the mesh's index "i" in Bullet's User index
-		targetRigidBody->setUserIndex(userIndexNum);
 		targetRigidBody->setUserPointer(rigidbodies[rigidbodies.size()-1]);
 
 		targetRigidBodies[i] = targetRigidBody;
@@ -661,39 +488,25 @@ int main()
 		));
 		if (i < 4) {
 
-			btRigidBody::btRigidBodyConstructionInfo wallRigidBodyCI(
-				0,                  // mass, in kg. 0 -> Static object, will never move.
-				wallMotionstate,
-				wallCollisionShape,  // collision shape of body
-				btVector3(0, 0, 0)    // local inertia
-			);
+			btRigidBody::btRigidBodyConstructionInfo wallRigidBodyCI(0, wallMotionstate, wallCollisionShape, btVector3(0, 0, 0));
 			btRigidBody *wallRigidBody = new btRigidBody(wallRigidBodyCI);
 
 			rigidbodies.push_back(new physicsObject(wallRigidBody, userIndexNum, "Wall"));
 			dynamicsWorld->addRigidBody(wallRigidBody);
-			wallRigidBody->setCollisionFlags(wallRigidBody->getCollisionFlags() | btCollisionObject::CF_CUSTOM_MATERIAL_CALLBACK);
 
 			// Store the mesh's index "i" in Bullet's User index
-			wallRigidBody->setUserIndex(userIndexNum);
 			wallRigidBody->setUserPointer(rigidbodies[rigidbodies.size() - 1]);
 
 			wallRigidBody->setRestitution(0.9);
 		}
 		else {
-			btRigidBody::btRigidBodyConstructionInfo wallRigidBodyCI(
-				0,                  // mass, in kg. 0 -> Static object, will never move.
-				wallMotionstate,
-				floorCollisionShape,  // collision shape of body
-				btVector3(0, 0, 0)    // local inertia
-			);
+			btRigidBody::btRigidBodyConstructionInfo wallRigidBodyCI(0, wallMotionstate, floorCollisionShape, btVector3(0, 0, 0));
 			btRigidBody *wallRigidBody = new btRigidBody(wallRigidBodyCI);
 
 			rigidbodies.push_back(new physicsObject(wallRigidBody, userIndexNum, "Wall"));
 			dynamicsWorld->addRigidBody(wallRigidBody);
-			wallRigidBody->setCollisionFlags(wallRigidBody->getCollisionFlags() | btCollisionObject::CF_CUSTOM_MATERIAL_CALLBACK);
 
 			// Store the mesh's index "i" in Bullet's User index
-			wallRigidBody->setUserIndex(userIndexNum);
 			wallRigidBody->setUserPointer(rigidbodies[rigidbodies.size() - 1]);
 
 			wallRigidBody->setRestitution(0.9);
@@ -701,8 +514,8 @@ int main()
 		userIndexNum++;
 	}
 
-	bulletPositions[shots] = glm::vec3(getPosition().x + 0.3, getPosition().y, getPosition().z - 2);
-	bulletRotations[shots] = glm::normalize(glm::quat(glm::vec3(1.5708 - getVertical(), 0.03054326 + getHorizontal(), 0)));
+	bulletPositions[shots] = glm::vec3(0, 0, 0);
+	bulletRotations[shots] = glm::normalize(glm::quat(glm::vec3(0, 0, 0)));
 
 	btDefaultMotionState* bulletMotionstate = new btDefaultMotionState(btTransform(
 		btQuaternion(bulletRotations[shots].x, bulletRotations[shots].y, bulletRotations[shots].z, bulletRotations[shots].w),
@@ -714,40 +527,21 @@ int main()
 
 	// For speed computation
 	double lastTime = glfwGetTime();
-	int nbFrames = 0;
 
 	do {
 
 		// Measure speed
 		double currentTime = glfwGetTime();
-		nbFrames++;
 		if (currentTime - lastTime >= 1.0) {
-			nbFrames = 0;
 			lastTime += 1.0;
 		}
 		float deltaTime = currentTime - lastTime;
 
 		dynamicsWorld->stepSimulation(deltaTime, 7);
-
 		//// Step the simulation at an interval of 60hz
 		//dynamicsWorld->stepSimulation(1 / 60.f, 10);
 
-		//dynamicsWorld->performDiscreteCollisionDetection();
-		//MyContactResultCallback callback;
-
-		//for (int i = 0; i < shots; i++) {
-		//	for (int j = 0; i < targetNum; j++) {
-		//		dynamicsWorld->contactPairTest(bulletRigidBodies[i], targetRigidBodies[j], callback);
-		//	}
-		//}
-
-		for (auto physicsObject : rigidbodies) {
-			if (physicsObject->hit == true) {
-				dynamicsWorld->removeRigidBody(rigidbodies[physicsObject->id]->body);
-				targetRigidBodies.at(physicsObject->id) = NULL;
-				//rigidbodies._Pop_back_n(rigidBodyIndexB); Is this needed?
-			}
-		}
+		handleCounters();
 
 		// Compute the MVP matrix from keyboard and mouse input
 		computeMatricesFromInputs();
@@ -758,45 +552,6 @@ int main()
 			mydebugdrawer.SetMatrices(ViewMatrix, ProjectionMatrix);
 		}
 
-		// Ray casting
-		static int rcOldState = GLFW_RELEASE;
-		int rcNewState = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT);
-		if (rcNewState == GLFW_RELEASE && rcOldState == GLFW_PRESS) {
-			glm::vec3 out_origin;
-			glm::vec3 out_direction;
-			ScreenPosToWorldRay(
-				windowWidth / 2, windowHeight / 2,
-				windowWidth, windowHeight,
-				ViewMatrix,
-				ProjectionMatrix,
-				out_origin,
-				out_direction
-			);
-
-			glm::vec3 out_end = out_origin + out_direction*1000.0f;
-
-			btCollisionWorld::ClosestRayResultCallback RayCallback(btVector3(out_origin.x, out_origin.y, out_origin.z), btVector3(out_end.x, out_end.y, out_end.z));
-			dynamicsWorld->rayTest(btVector3(out_origin.x, out_origin.y, out_origin.z), btVector3(out_end.x, out_end.y, out_end.z), RayCallback);
-			if (RayCallback.hasHit()) {
-				int rigidBodyIndex = RayCallback.m_collisionObject->getUserIndex();
-				if (rigidBodyIndex <= targetNum - 1) {
-					cout << "Hit Target " << rigidBodyIndex << "!" << endl;
-					dynamicsWorld->removeRigidBody(rigidbodies[rigidBodyIndex]->body);
-					targetRigidBodies.at(rigidBodyIndex) = NULL;
-				}
-				else if (rigidBodyIndex > targetNum - 1 && rigidBodyIndex <= (targetNum + wallNum - 1)) {
-					cout << "Hit Wall " << rigidBodyIndex - targetNum << "!" << endl;
-				}
-				else if (rigidBodyIndex > (targetNum + wallNum - 1)) {
-					cout << "Hit Bullet! " << rigidBodyIndex - (targetNum + wallNum) << endl;
-				}
-			}
-			else {
-				cout << "Miss!" << endl;
-			}
-		}
-		rcOldState = rcNewState;
-
 		// Clear the screen
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
@@ -806,13 +561,13 @@ int main()
 		////// Start render of room //////
 
 		// Compute the MVP matrix from keyboard and mouse input
-		glm::mat4 ModelMatrix1 = glm::mat4(1.0);
-		glm::mat4 MVP1 = ProjectionMatrix * ViewMatrix * ModelMatrix1;
+		glm::mat4 RoomModelMatrix = glm::mat4(1.0);
+		glm::mat4 RoomMVP = ProjectionMatrix * ViewMatrix * RoomModelMatrix;
 
 		// Send our transformation to the currently bound shader, 
 		// in the "MVP" uniform
-		glUniformMatrix4fv(MatrixID, 1, GL_FALSE, &MVP1[0][0]);
-		glUniformMatrix4fv(ModelMatrixID, 1, GL_FALSE, &ModelMatrix1[0][0]);
+		glUniformMatrix4fv(MatrixID, 1, GL_FALSE, &RoomMVP[0][0]);
+		glUniformMatrix4fv(ModelMatrixID, 1, GL_FALSE, &RoomModelMatrix[0][0]);
 
 		// Bind our texture in Texture Unit 0
 		glActiveTexture(GL_TEXTURE0);
@@ -822,50 +577,24 @@ int main()
 
 		// 1st attribute buffer : vertices
 		glEnableVertexAttribArray(0);
-		glBindBuffer(GL_ARRAY_BUFFER, vertexbuffer);
-		glVertexAttribPointer(
-			0,                  // attribute
-			3,                  // size
-			GL_FLOAT,           // type
-			GL_FALSE,           // normalized?
-			0,                  // stride
-			(void*)0            // array buffer offset
-		);
+		glBindBuffer(GL_ARRAY_BUFFER, roomVertexBuffer);
+		glVertexAttribPointer(0, 3, GL_FLOAT , GL_FALSE, 0, (void*)0);
 
 		// 2nd attribute buffer : UVs
 		glEnableVertexAttribArray(1);
-		glBindBuffer(GL_ARRAY_BUFFER, uvbuffer);
-		glVertexAttribPointer(
-			1,                                // attribute
-			2,                                // size
-			GL_FLOAT,                         // type
-			GL_FALSE,                         // normalized?
-			0,                                // stride
-			(void*)0                          // array buffer offset
-		);
+		glBindBuffer(GL_ARRAY_BUFFER, roomUVBuffer);
+		glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 0, (void*)0);
 
 		// 3rd attribute buffer : normals
 		glEnableVertexAttribArray(2);
-		glBindBuffer(GL_ARRAY_BUFFER, normalbuffer);
-		glVertexAttribPointer(
-			2,                                // attribute
-			3,                                // size
-			GL_FLOAT,                         // type
-			GL_FALSE,                         // normalized?
-			0,                                // stride
-			(void*)0                          // array buffer offset
-		);
+		glBindBuffer(GL_ARRAY_BUFFER, roomNormalBuffer);
+		glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, 0, (void*)0);
 
 		// Index buffer
-		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, elementbuffer);
+		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, roomIndiceBuffer);
 
-		// Draw the triangles !
-		glDrawElements(
-			GL_TRIANGLES,      // mode
-			roomIndices.size(),    // count
-			GL_UNSIGNED_SHORT,   // type
-			(void*)0           // element array buffer offset
-		);
+		// Draw the triangles
+		glDrawElements(GL_TRIANGLES, roomIndices.size(), GL_UNSIGNED_SHORT, (void*)0);
 
 		////// End render of room //////
 		////// Start render of bullet //////
@@ -882,8 +611,11 @@ int main()
 			float bulletPower = 100.0f;
 			glm::vec3 bulletVelocity = cameraDirection * bulletPower;
 
+
+			float bulletOffsetVertical = 1.5708;
+			float bulletOffsetHorizontal = 0.03054326;
 			bulletPositions[shots] = glm::vec3(newBulletPosition.x, newBulletPosition.y, newBulletPosition.z);
-			bulletRotations[shots] = glm::normalize(glm::quat(glm::vec3(1.5708-getVertical(), 0.03054326+getHorizontal(), 0)));
+			bulletRotations[shots] = glm::normalize(glm::quat(glm::vec3(bulletOffsetVertical-getVertical(), bulletOffsetHorizontal+getHorizontal(), 0)));
 
 			btDefaultMotionState* bulletMotionstate = new btDefaultMotionState(btTransform(
 				btQuaternion(bulletRotations[shots].x, bulletRotations[shots].y, bulletRotations[shots].z, bulletRotations[shots].w),
@@ -896,28 +628,21 @@ int main()
 			rigidbodies.push_back(new physicsObject(bulletRigidBody, userIndexNum, "Bullet"));
 			dynamicsWorld->addRigidBody(bulletRigidBody);
 			// Store the mesh's index "i" in Bullet's User index
-			bulletRigidBody->setUserIndex(userIndexNum);
 			bulletRigidBody->setUserPointer(rigidbodies[rigidbodies.size() - 1]);
 			userIndexNum++;
 
 			bulletRigidBodies[shots] = bulletRigidBody;
-			//
-			bulletRigidBody->setCollisionFlags(bulletRigidBody->getCollisionFlags() | btCollisionObject::CF_CUSTOM_MATERIAL_CALLBACK);
 			bulletRigidBody->setLinearVelocity(btVector3(bulletVelocity.x, bulletVelocity.y, bulletVelocity.z));
 			desiredVelocity = bulletRigidBody->getLinearVelocity().length();
-			bulletRigidBody->setRestitution(0.4);
+			bulletRigidBody->setRestitution(0.5);
 			//bulletRigidBody->setFriction(0);
 
 			// Check these settings
 			bulletRigidBody->setCcdMotionThreshold(1e-7);
-			bulletRigidBody->setCcdSweptSphereRadius(0.50);
+			bulletRigidBody->setCcdSweptSphereRadius(0.015);
 
 			bulletCount--;
 			shots++;
-
-			// To do:
-			// Set correct velocity, bounce etc.
-			// Targets vanish on collision
 		}
 		lcOldState = lcNewState;
 
@@ -933,62 +658,33 @@ int main()
 			glm::mat4 BulletTranslationMatrix = translate(mat4(), bulletPositions[i]);
 			glm::mat4 BulletScaleMatrix = scale(mat4(), glm::vec3(0.05f, 0.05f, 0.05f));
 			glm::mat4 BulletModelMatrix = BulletTranslationMatrix * BulletRotationMatrix * BulletScaleMatrix;
-			glm::mat4 MVP2 = ProjectionMatrix * ViewMatrix * BulletModelMatrix;
+			glm::mat4 BulletMVP2 = ProjectionMatrix * ViewMatrix * BulletModelMatrix;
 
 			// Send our transformation to the currently bound shader, 
 			// in the "MVP" uniform
-			glUniformMatrix4fv(MatrixID, 1, GL_FALSE, &MVP2[0][0]);
+			glUniformMatrix4fv(MatrixID, 1, GL_FALSE, &BulletMVP2[0][0]);
 			glUniformMatrix4fv(ModelMatrixID, 1, GL_FALSE, &BulletModelMatrix[0][0]);
 
 			// 1st attribute buffer : vertices
 			glEnableVertexAttribArray(0);
-			glBindBuffer(GL_ARRAY_BUFFER, vertexbuffer2);
-			glVertexAttribPointer(
-				0,                  // attribute
-				3,                  // size
-				GL_FLOAT,           // type
-				GL_FALSE,           // normalized?
-				0,                  // stride
-				(void*)0            // array buffer offset
-			);
+			glBindBuffer(GL_ARRAY_BUFFER, bulletVertexBuffer);
+			glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, (void*)0);
 
 			// 2nd attribute buffer : UVs
 			glEnableVertexAttribArray(1);
-			glBindBuffer(GL_ARRAY_BUFFER, uvbuffer2);
-			glVertexAttribPointer(
-				1,                                // attribute
-				2,                                // size
-				GL_FLOAT,                         // type
-				GL_FALSE,                         // normalized?
-				0,                                // stride
-				(void*)0                          // array buffer offset
-			);
+			glBindBuffer(GL_ARRAY_BUFFER, bulletUVBuffer);
+			glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 0, (void*)0);
 
 			// 3rd attribute buffer : normals
 			glEnableVertexAttribArray(2);
-			glBindBuffer(GL_ARRAY_BUFFER, normalbuffer2);
-			glVertexAttribPointer(
-				2,                                // attribute
-				3,                                // size
-				GL_FLOAT,                         // type
-				GL_FALSE,                         // normalized?
-				0,                                // stride
-				(void*)0                          // array buffer offset
-			);
+			glBindBuffer(GL_ARRAY_BUFFER, bulletNormalBuffer);
+			glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, 0, (void*)0);
 
 			// Index buffer
-			glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, elementbuffer2);
+			glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, bulletIndiceBuffer);
 
 			// Draw the triangles
 			glDrawElements(GL_TRIANGLES, bulletIndices.size(), GL_UNSIGNED_SHORT, (void*)0);
-
-			//btVector3 currentVelocityDirection = bulletRigidBodies[i]->getLinearVelocity();
-			//btScalar currentVelocty = currentVelocityDirection.length();
-			//if (currentVelocty < desiredVelocity)
-			//{
-			//	currentVelocityDirection *= desiredVelocity / currentVelocty;
-			//	bulletRigidBodies[i]->setLinearVelocity(currentVelocityDirection);
-			//}
 
 			btTransform bulletTrans;
 			bulletRigidBodies[i]->getMotionState()->getWorldTransform(bulletTrans);
@@ -1015,53 +711,32 @@ int main()
 
 				glm::mat4 TargetRotationMatrix = glm::toMat4(targetOrientations[i]);
 				glm::mat4 TargetTranslationMatrix = translate(mat4(), targetPositions[i]);
-				glm::mat4 ModelMatrix3 = TargetTranslationMatrix * TargetRotationMatrix;
+				glm::mat4 TargetModelMatrix = TargetTranslationMatrix * TargetRotationMatrix;
 
-				glm::mat4 MVP3 = ProjectionMatrix * ViewMatrix * ModelMatrix3;
+				glm::mat4 TargetMVP = ProjectionMatrix * ViewMatrix * TargetModelMatrix;
 
 				// Send our transformation to the currently bound shader, 
 				// in the "MVP" uniform
-				glUniformMatrix4fv(MatrixID, 1, GL_FALSE, &MVP3[0][0]);
-				glUniformMatrix4fv(ModelMatrixID, 1, GL_FALSE, &ModelMatrix3[0][0]);
+				glUniformMatrix4fv(MatrixID, 1, GL_FALSE, &TargetMVP[0][0]);
+				glUniformMatrix4fv(ModelMatrixID, 1, GL_FALSE, &TargetModelMatrix[0][0]);
 
 				// 1st attribute buffer : vertices
 				glEnableVertexAttribArray(0);
-				glBindBuffer(GL_ARRAY_BUFFER, vertexbuffer3);
-				glVertexAttribPointer(
-					0,                  // attribute
-					3,                  // size
-					GL_FLOAT,           // type
-					GL_FALSE,           // normalized?
-					0,                  // stride
-					(void*)0            // array buffer offset
-				);
+				glBindBuffer(GL_ARRAY_BUFFER, targetVertexBuffer);
+				glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, (void*)0);
 
 				// 2nd attribute buffer : UVs
 				glEnableVertexAttribArray(1);
-				glBindBuffer(GL_ARRAY_BUFFER, uvbuffer3);
-				glVertexAttribPointer(
-					1,                                // attribute
-					2,                                // size
-					GL_FLOAT,                         // type
-					GL_FALSE,                         // normalized?
-					0,                                // stride
-					(void*)0                          // array buffer offset
-				);
+				glBindBuffer(GL_ARRAY_BUFFER, targetUVBuffer);
+				glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 0, (void*)0);
 
 				// 3rd attribute buffer : normals
 				glEnableVertexAttribArray(2);
-				glBindBuffer(GL_ARRAY_BUFFER, normalbuffer3);
-				glVertexAttribPointer(
-					2,                                // attribute
-					3,                                // size
-					GL_FLOAT,                         // type
-					GL_FALSE,                         // normalized?
-					0,                                // stride
-					(void*)0                          // array buffer offset
-				);
+				glBindBuffer(GL_ARRAY_BUFFER, targetNormalBuffer);
+				glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, 0, (void*)0);
 
 				// Index buffer
-				glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, elementbuffer3);
+				glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, targetIndiceBuffer);
 
 				// Draw the triangles
 				glDrawElements(GL_TRIANGLES, targetIndices.size(), GL_UNSIGNED_SHORT, (void*)0);
@@ -1076,58 +751,37 @@ int main()
 		glBindTexture(GL_TEXTURE_2D, gunTexture);
 		glUniform1i(TextureID, 0);
 
-		glm::mat4 ModelMatrix4 = glm::mat4(1.0);
+		glm::mat4 GunModelMatrix = glm::mat4(1.0);
 
 		// Add an offset so the gun appears in view, rotate so that it's initially facing forward and scale it
-		ModelMatrix4 = glm::translate(ModelMatrix4, glm::vec3(0.35, -0.85, -1.25));
-		ModelMatrix4 = glm::scale(ModelMatrix4, glm::vec3(0.1f, 0.15f, 0.15f));
-		ModelMatrix4 = glm::rotate(ModelMatrix4, 1.75f, glm::vec3(0.0f, 1.0f, 0.0f));
+		GunModelMatrix = glm::translate(GunModelMatrix, glm::vec3(0.35, -0.85, -1.25));
+		GunModelMatrix = glm::scale(GunModelMatrix, glm::vec3(0.1f, 0.15f, 0.15f));
+		GunModelMatrix = glm::rotate(GunModelMatrix, 1.75f, glm::vec3(0.0f, 1.0f, 0.0f));
 
-		glm::mat4 MVP4 = ProjectionMatrix * ModelMatrix4; // Left out * ViewMatrix
+		glm::mat4 GunMVP = ProjectionMatrix * GunModelMatrix;
 
-														  // Send our transformation to the currently bound shader, 
-														  // in the "MVP" uniform
-		glUniformMatrix4fv(MatrixID, 1, GL_FALSE, &MVP4[0][0]);
-		glUniformMatrix4fv(ModelMatrixID, 1, GL_FALSE, &ModelMatrix4[0][0]);
+		// Send our transformation to the currently bound shader, 
+		// in the "MVP" uniform
+		glUniformMatrix4fv(MatrixID, 1, GL_FALSE, &GunMVP[0][0]);
+		glUniformMatrix4fv(ModelMatrixID, 1, GL_FALSE, &GunModelMatrix[0][0]);
 
 		// 1st attribute buffer : vertices
 		glEnableVertexAttribArray(0);
-		glBindBuffer(GL_ARRAY_BUFFER, vertexbuffer4);
-		glVertexAttribPointer(
-			0,                  // attribute
-			3,                  // size
-			GL_FLOAT,           // type
-			GL_FALSE,           // normalized?
-			0,                  // stride
-			(void*)0            // array buffer offset
-		);
+		glBindBuffer(GL_ARRAY_BUFFER, gunVertexBuffer);
+		glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, (void*)0);
 
 		// 2nd attribute buffer : UVs
 		glEnableVertexAttribArray(1);
-		glBindBuffer(GL_ARRAY_BUFFER, uvbuffer4);
-		glVertexAttribPointer(
-			1,                                // attribute
-			2,                                // size
-			GL_FLOAT,                         // type
-			GL_FALSE,                         // normalized?
-			0,                                // stride
-			(void*)0                          // array buffer offset
-		);
+		glBindBuffer(GL_ARRAY_BUFFER, gunUVBuffer);
+		glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 0, (void*)0);
 
 		// 3rd attribute buffer : normals
 		glEnableVertexAttribArray(2);
-		glBindBuffer(GL_ARRAY_BUFFER, normalbuffer4);
-		glVertexAttribPointer(
-			2,                                // attribute
-			3,                                // size
-			GL_FLOAT,                         // type
-			GL_FALSE,                         // normalized?
-			0,                                // stride
-			(void*)0                          // array buffer offset
-		);
+		glBindBuffer(GL_ARRAY_BUFFER, gunNormalBuffer);
+		glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, 0, (void*)0);
 
 		// Index buffer
-		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, elementbuffer4);
+		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, gunIndiceBuffer);
 
 		// Draw the triangles
 		glDrawElements(GL_TRIANGLES, gunIndices.size(), GL_UNSIGNED_SHORT, (void*)0);
@@ -1154,35 +808,33 @@ int main()
 
 	// Cleanup VBO and shader
 	// First object
-	glDeleteBuffers(1, &vertexbuffer);
-	glDeleteBuffers(1, &uvbuffer);
-	glDeleteBuffers(1, &normalbuffer);
-	glDeleteBuffers(1, &elementbuffer);
+	glDeleteBuffers(1, &roomVertexBuffer);
+	glDeleteBuffers(1, &roomUVBuffer);
+	glDeleteBuffers(1, &roomNormalBuffer);
+	glDeleteBuffers(1, &roomIndiceBuffer);
 	// Second object
-	glDeleteBuffers(1, &vertexbuffer2);
-	glDeleteBuffers(1, &uvbuffer2);
-	glDeleteBuffers(1, &normalbuffer2);
-	glDeleteBuffers(1, &elementbuffer2);
+	glDeleteBuffers(1, &bulletVertexBuffer);
+	glDeleteBuffers(1, &bulletUVBuffer);
+	glDeleteBuffers(1, &bulletNormalBuffer);
+	glDeleteBuffers(1, &bulletIndiceBuffer);
 	// Third object
-	glDeleteBuffers(1, &vertexbuffer3);
-	glDeleteBuffers(1, &uvbuffer3);
-	glDeleteBuffers(1, &normalbuffer3);
-	glDeleteBuffers(1, &elementbuffer3);
+	glDeleteBuffers(1, &targetVertexBuffer);
+	glDeleteBuffers(1, &targetUVBuffer);
+	glDeleteBuffers(1, &targetNormalBuffer);
+	glDeleteBuffers(1, &targetIndiceBuffer);
 	// Fourth object
-	glDeleteBuffers(1, &vertexbuffer4);
-	glDeleteBuffers(1, &uvbuffer4);
-	glDeleteBuffers(1, &normalbuffer4);
-	glDeleteBuffers(1, &elementbuffer4);
+	glDeleteBuffers(1, &gunVertexBuffer);
+	glDeleteBuffers(1, &gunUVBuffer);
+	glDeleteBuffers(1, &gunNormalBuffer);
+	glDeleteBuffers(1, &gunIndiceBuffer);
 	glDeleteTextures(1, &TextureID);
 	glDeleteProgram(programID);
 	glDeleteVertexArrays(1, &VertexArrayID);
 
 	// Close OpenGL window and terminate GLFW
 	glfwTerminate();
-	glfwDestroyCursor(crosshairCursor);
 
 	// Clean up Bullet
-
 	for (int i = 0; i < rigidbodies.size(); i++) {
 		dynamicsWorld->removeRigidBody(rigidbodies[i]->body);
 		delete rigidbodies[i]->body->getMotionState();
