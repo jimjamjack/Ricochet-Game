@@ -1,9 +1,12 @@
 #version 330 core
 
-in vec3 fColor;
-out vec4 color;
+// input: Fragment colour
+in vec3 fragmentColour;
+
+// Ouput: colour data (RGB)
+out vec4 colour;
 
 void main()
 {
-    color = color;   
+    colour = colour;   
 }

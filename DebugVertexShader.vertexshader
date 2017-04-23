@@ -1,18 +1,20 @@
 #version 330 core
 
-layout (location = 0) in vec3 position;
-layout (location = 1) in vec3 color;
+// Input: Vertex data
+layout (location = 0) in vec3 vertexPosition;
+layout (location = 1) in vec3 vertexColour;
 
-out VS_OUT {
-    vec3 color;
-} vs_out;
+// Output: UV data
+out vec3 colour;
 
+// Use a uniform for the current projection and view matrices
 uniform mat4 projection;
 uniform mat4 view;
 
-void main()
-{
-    gl_Position = projection * view * vec4(position, 1.0f);
+void main() {
+	// Get the position of the vertex in world space
+    gl_Position = projection * view * vec4(vertexPosition, 1);
 
-    vs_out.color = color;
+	// Set the colour of the vertex
+    colour = vertexColour;
 }
