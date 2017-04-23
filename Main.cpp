@@ -38,9 +38,13 @@ using namespace glm;
 
 // Default game settings
 bool debugMode = false;
+bool slowMotion = false;
 int targetNum = 10;
 int bulletCount = 5;
 float gravity = -9.81f;
+float bulletPower = 100.0f;
+float friction = 0.5f;
+float bulletRestitution = 0.8f;
 
 // Initialise variables
 btDiscreteDynamicsWorld* dynamicsWorld;
@@ -80,8 +84,12 @@ void gameSetUp() {
 	// The user's choices
 	string useDefault;
 	string useDebug;
+	string enteredSlowMotion;
 	int enteredNumber = 0;
 	string enteredGravity;
+	string enteredBulletPower;
+	string enteredBulletType;
+	string enteredSlipperyBullets;
 
 	// Only change settings if user wants a custom game
 	while (useDefault != "y" && useDefault != "n") {
@@ -95,6 +103,15 @@ void gameSetUp() {
 				getline(cin, useDebug);
 				if (useDebug == "y") {
 					debugMode = true;
+				}
+			}
+
+			// Use slow-motion?
+			while (enteredSlowMotion != "y" && enteredSlowMotion != "n") {
+				cout << "Would you like to use slow-motion? (y/n): ";
+				getline(cin, enteredSlowMotion);
+				if (enteredSlowMotion == "y") {
+					slowMotion = true;
 				}
 			}
 
@@ -126,14 +143,44 @@ void gameSetUp() {
 			while (enteredGravity != "e" && enteredGravity != "m" && enteredGravity != "j") {
 				cout << "Which gravity would you like? ((e)arth, (m)oon or (j)upiter): ";
 				getline(cin, enteredGravity);
-				if (enteredGravity == "e") {
-					gravity = -9.81f;
-				}
-				else if (enteredGravity == "m") {
+				if (enteredGravity == "m") {
 					gravity = -1.6f;
 				}
 				else if (enteredGravity == "j") {
 					gravity = -24.8f;
+				}
+			}
+
+			// Use which bullet power?
+			while (enteredBulletPower != "n" && enteredBulletPower != "s" && enteredBulletPower != "w") {
+				cout << "Which level of power would you like your bullets to have? ((n)ormal, (s)trong or (w)eak): ";
+				getline(cin, enteredBulletPower);
+				if (enteredBulletPower == "s") {
+					bulletPower = 200.0f;
+				}
+				else if (enteredBulletPower == "w") {
+					bulletPower = 20.0f;
+				}
+			}
+
+			// Use which bullet type?
+			while (enteredBulletType != "n" && enteredBulletType != "r" && enteredBulletType != "p") {
+				cout << "Which bullet type would you like? ((n)ormal, (r)ubber or (p)lastic): ";
+				getline(cin, enteredBulletType);
+				if (enteredBulletType == "r") {
+					bulletRestitution = 1.0f;
+				}
+				else if (enteredBulletType == "p") {
+					bulletRestitution = 0.1f;
+				}
+			}
+
+			// Use slippery bullets?
+			while (enteredSlipperyBullets != "y" && enteredSlipperyBullets != "n") {
+				cout << "Would you like to have slippery bullets? (y/n): ";
+				getline(cin, enteredSlipperyBullets);
+				if (enteredSlipperyBullets == "y") {
+					friction = 0.1f;
 				}
 			}
 		}
@@ -525,7 +572,7 @@ int main()
 		dynamicsWorld->addRigidBody(targetRigidBody);
 
 		// Set how "bouncy" the object is
-		targetRigidBody->setRestitution(0.9f);
+		targetRigidBody->setRestitution(1.0f);
 
 		// Set the mesh's pointer add it to a collection of target rigid bodies
 		targetRigidBody->setUserPointer(gameObjects[gameObjects.size()-1]);
@@ -555,7 +602,7 @@ int main()
 			dynamicsWorld->addRigidBody(wallRigidBody);
 
 			// Set how "bouncy" the object is
-			wallRigidBody->setRestitution(0.9f);
+			wallRigidBody->setRestitution(1.0f);
 
 			// Set the mesh's pointer
 			wallRigidBody->setUserPointer(gameObjects[gameObjects.size() - 1]);
@@ -571,7 +618,7 @@ int main()
 			dynamicsWorld->addRigidBody(wallRigidBody);
 
 			// Set how "bouncy" the object is
-			wallRigidBody->setRestitution(0.9f);
+			wallRigidBody->setRestitution(0.8f);
 
 			// Set the mesh's pointer
 			wallRigidBody->setUserPointer(gameObjects[gameObjects.size() - 1]);
@@ -605,11 +652,15 @@ int main()
 		}
 		float deltaTime = (float)currentTime - (float)previousTime;
 
-		// Step the actual simulation according to delta time
-		dynamicsWorld->stepSimulation(deltaTime, 7);
-
-		//// Step the simulation at an interval of 60hz
-		//dynamicsWorld->stepSimulation(1 / 60.f, 10);
+		// Use a slower simulation step?
+		if (!slowMotion) {
+			// Step the simulation according to delta time
+			dynamicsWorld->stepSimulation(deltaTime, 7);
+		}
+		else {
+			// Step the simulation according to delta time but much slower
+			dynamicsWorld->stepSimulation(deltaTime / 1000.0f, 7);
+		}
 
 		// Update targets and counters
 		handleCounters();
@@ -681,7 +732,6 @@ int main()
 			vec3 newBulletPosition = cameraPosition + cameraDirection;
 
 			// Set the strength and velocity of each bullet
-			float bulletPower = 100.0f;
 			vec3 bulletVelocity = cameraDirection * bulletPower;
 
 			// offset bullet rotations so that they always fire from the gun
@@ -708,12 +758,12 @@ int main()
 
 			// Set bullet's physics forces
 			bulletRigidBody->setLinearVelocity(btVector3(bulletVelocity.x, bulletVelocity.y, bulletVelocity.z));
-			bulletRigidBody->setRestitution(0.5f);
-			//bulletRigidBody->setFriction(0.0f);
+			bulletRigidBody->setRestitution(bulletRestitution);
+			bulletRigidBody->setFriction(friction);
 
 			// Enable continuous collision detection
 			bulletRigidBody->setCcdMotionThreshold((btScalar)1e-7);
-			bulletRigidBody->setCcdSweptSphereRadius((btScalar)0.015);
+			bulletRigidBody->setCcdSweptSphereRadius((btScalar)0.03);
 
 			// Set the mesh's pointer add it to a collection of bullet rigid bodies
 			bulletRigidBody->setUserPointer(gameObjects[gameObjects.size() - 1]);
