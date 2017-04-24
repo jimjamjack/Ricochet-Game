@@ -742,7 +742,7 @@ int main()
 			bulletPositions[shots] = vec3(newBulletPosition.x, newBulletPosition.y, newBulletPosition.z);
 			bulletOrientations[shots] = normalize(quat(vec3(bulletOffsetVertical-getVertical(), bulletOffsetHorizontal+getHorizontal(), 0)));
 
-			// Create each target's motion state given it's position and orientation
+			// Create each bullet's motion state given it's position and orientation
 			btDefaultMotionState* bulletMotionstate = new btDefaultMotionState(btTransform(
 				btQuaternion(bulletOrientations[shots].x, bulletOrientations[shots].y, bulletOrientations[shots].z, bulletOrientations[shots].w),
 				btVector3(bulletPositions[shots].x, bulletPositions[shots].y, bulletPositions[shots].z)

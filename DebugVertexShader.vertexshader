@@ -4,7 +4,7 @@
 layout (location = 0) in vec3 vertexPosition;
 layout (location = 1) in vec3 vertexColour;
 
-// Output: UV data
+// Output: colour
 out vec3 colour;
 
 // Use a uniform for the current projection and view matrices
