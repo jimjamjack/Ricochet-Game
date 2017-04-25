@@ -40,7 +40,7 @@ using namespace glm;
 bool debugMode = false;
 bool slowMotion = false;
 int targetNum = 10;
-int bulletCount = 5;
+int bulletCount = 6;
 float gravity = -9.81f;
 float bulletPower = 100.0f;
 float friction = 0.5f;
@@ -73,6 +73,7 @@ vector<quat> wallOrientations(wallNum);
 // Bullet information
 vector<vec3> bulletPositions(bulletCount);
 vector<quat> bulletOrientations(bulletCount);
+vector<vec3> bulletLinePoints;
 vector<btRigidBody*> bulletRigidBodies(bulletCount);
 
 // Contains every rigid body in the scene and its information
@@ -131,8 +132,8 @@ void gameSetUp() {
 				targetOrientations.resize(targetNum);
 				targetRigidBodies.resize(targetNum);
 
-				// Set number of bullets to always half of the number of targets
-				bulletCount = (int)floor(targetNum / 2);
+				// Set number of bullets to less than the number of targets
+				bulletCount = (int)floor(targetNum / 2) + 1;
 				bulletPositions.resize(bulletCount);
 				bulletOrientations.resize(bulletCount);
 				bulletRigidBodies.resize(bulletCount);
@@ -180,7 +181,7 @@ void gameSetUp() {
 				cout << "Would you like to have slippery bullets? (y/n): ";
 				getline(cin, enteredSlipperyBullets);
 				if (enteredSlipperyBullets == "y") {
-					friction = 0.1f;
+					friction = 0.05f;
 				}
 			}
 		}
@@ -716,6 +717,22 @@ int main()
 
 		/*-------------------------End rendering the room-------------------------*/
 
+		/*-------------------------Rendering the bullet path-------------------------*/
+
+		// Store most current bullet's last position
+		if (shots != 0) bulletLinePoints.push_back(vec3(bulletPositions[shots - 1].x, bulletPositions[shots - 1].y, bulletPositions[shots - 1].z));
+
+		// Draw the bullet's path
+		GLfloat thickness = 3.0;
+		glLineWidth(thickness);
+		glBegin(GL_LINE_STRIP);
+		for (auto vec3 : bulletLinePoints) {
+			glVertex3f(vec3.x, vec3.y, vec3.z);
+		}
+		glEnd();
+
+		/*-------------------------End rendering the bullet path-------------------------*/
+
 		/*-------------------------Rendering the bullets-------------------------*/
 
 		// Get individual left clicks
@@ -773,6 +790,8 @@ int main()
 			physicsBodyCount++;
 			bulletCount--;
 			shots++;
+
+			bulletLinePoints.clear();
 		}
 		// Update state of left mouse button
 		leftClickOldState = leftClickNewState;
