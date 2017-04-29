@@ -29,6 +29,9 @@ using namespace glm;
 #include <btBulletCollisionCommon.h>
 #include <LinearMath/btIDebugDraw.h>
 
+// Include AntTweakBar
+#include <AntTweakBar.h>
+
 // Include my files
 #include "Shader.h"
 #include "Camera.h"
@@ -40,11 +43,25 @@ using namespace glm;
 bool debugMode = false;
 bool slowMotion = false;
 int targetNum = 10;
-int bulletCount = 6;
+int targetCount;
+int bulletCount = 7;
 float gravity = -9.81f;
 float bulletPower = 100.0f;
 float friction = 0.5f;
 float bulletRestitution = 0.8f;
+
+// HUD variables
+string timeCounter;
+string fpsCounter;
+string bulletCounter;
+string targetCounter;
+string winOrLose = "-";
+
+// For FPS
+int fpsCurrentTime;
+int fpsPreviousTime = 0;
+int frames = 0;
+double fps = 0;
 
 // Initialise variables
 btDiscreteDynamicsWorld* dynamicsWorld;
@@ -133,7 +150,7 @@ void gameSetUp() {
 				targetRigidBodies.resize(targetNum);
 
 				// Set number of bullets to less than the number of targets
-				bulletCount = (int)floor(targetNum / 2) + 1;
+				bulletCount = (int)(targetNum * 0.70);
 				bulletPositions.resize(bulletCount);
 				bulletOrientations.resize(bulletCount);
 				bulletRigidBodies.resize(bulletCount);
@@ -157,7 +174,7 @@ void gameSetUp() {
 				cout << "Which level of power would you like your bullets to have? ((n)ormal, (s)trong or (w)eak): ";
 				getline(cin, enteredBulletPower);
 				if (enteredBulletPower == "s") {
-					bulletPower = 200.0f;
+					bulletPower = 150.0f;
 				}
 				else if (enteredBulletPower == "w") {
 					bulletPower = 20.0f;
@@ -186,10 +203,6 @@ void gameSetUp() {
 			}
 		}
 	}
-	// Seperate the HUD from the game set up
-	cout << endl;
-	cout << "-------------------------------HUD-------------------------------" << endl;
-	cout << endl;
 }
 
 void initialiseGLFWWindow() {
@@ -211,7 +224,12 @@ void initialiseGLFWWindow() {
 	glfwWindowHint(GLFW_RESIZABLE, false);
 
 	// Open a window and create its OpenGL context
-	window = glfwCreateWindow(1024, 768, "Ricochet Game", NULL, NULL);
+	const GLFWvidmode* mode = glfwGetVideoMode(glfwGetPrimaryMonitor());
+	glfwWindowHint(GLFW_RED_BITS, mode->redBits);
+	glfwWindowHint(GLFW_GREEN_BITS, mode->greenBits);
+	glfwWindowHint(GLFW_BLUE_BITS, mode->blueBits);
+	glfwWindowHint(GLFW_REFRESH_RATE, mode->refreshRate);
+	window = glfwCreateWindow(mode->width, mode->height, "Ricochet Game", glfwGetPrimaryMonitor(), NULL);
 	if (window == NULL) {
 		cout << "Failed to open GLFW window" << endl;
 		glfwTerminate();
@@ -262,7 +280,7 @@ void contactTickCallback(btDynamicsWorld *dynamicsWorld, btScalar timeStep) {
 		{
 			btManifoldPoint& contactPoint = contactManifold->getContactPoint(j);
 			// If there's a collision...
-			if (contactPoint.getDistance() < 0.1f)
+			if (contactPoint.getDistance() < 0.5f)
 			{
 				int rigidBodyIndexA = ((physicsObject*)objA->getUserPointer())->id;
 				string rigidBodyTypeA = ((physicsObject*)objA->getUserPointer())->type;
@@ -353,7 +371,7 @@ void VBOLoader(GLuint &indicesBuffer, GLuint &vertexBuffer, GLuint &uvBuffer, GL
 void handleCounters() {
 
 	// Each frame, update which targets have been hit
-	int targetCount = 0;
+	targetCount = 0;
 
 	for (auto physicsObject : gameObjects) {
 		if (physicsObject->type == "Target" && targetRigidBodies.at(physicsObject->id) != NULL) {
@@ -365,13 +383,11 @@ void handleCounters() {
 		}
 	}
 
-	// Print the game's current time, bullet and target count
-	string timeCounter = to_string(int(glfwGetTime()));
-	string bulletCounter = string(2 - to_string(bulletCount).length(), '0') + to_string(bulletCount);
-	string targetCounter = string(2 - to_string(targetCount).length(), '0') + to_string(targetCount);
-	string counter = "Time Played: " + timeCounter + " Secs - Bullet Count: " + bulletCounter + " - Target Count: " + targetCounter;
-	cout << counter;
-	cout << string(counter.length(), '\b');
+	// Get the game's current time, fps, bullet and target count
+	timeCounter = to_string((int)glfwGetTime()) + " Secs";
+	fpsCounter = to_string((int)fps);
+	bulletCounter = string(2 - to_string(bulletCount).length(), '0') + to_string(bulletCount);
+	targetCounter = string(2 - to_string(targetCount).length(), '0') + to_string(targetCount);
 }
 
 int main()
@@ -385,18 +401,32 @@ int main()
 	int windowWidth, windowHeight;
 	glfwGetWindowSize(window, &windowWidth, &windowHeight);
 
+	// Initialise the HUD
+	TwInit(TW_OPENGL_CORE, NULL);
+	TwWindowSize(windowWidth, windowHeight);
+	TwBar* HUD = TwNewBar("HUD");
+	TwDefine(" HUD refresh=0.1 ");
+	TwDefine(" HUD color='255 255 255' text=dark ");
+	TwDefine(" HUD alpha=50 ");
+	TwDefine(" HUD size='250 120' ");
+	TwAddVarRO(HUD, "Time played:", TW_TYPE_STDSTRING, &timeCounter, NULL);
+	TwAddVarRO(HUD, "FPS: ", TW_TYPE_STDSTRING, &fpsCounter, NULL);
+	TwAddVarRO(HUD, "Bullet Count:", TW_TYPE_STDSTRING, &bulletCounter, NULL);
+	TwAddVarRO(HUD, "Target Count:", TW_TYPE_STDSTRING, &targetCounter, NULL);
+	TwAddVarRO(HUD, "Win/Lose:", TW_TYPE_STDSTRING, &winOrLose, NULL);
+
 	GLuint VertexArrayID;
 	glGenVertexArrays(1, &VertexArrayID);
 	glBindVertexArray(VertexArrayID);
 
 	// Load the model shaders
-	GLuint programID = LoadShaders("TransformVertexShader.vertexshader", "TextureFragmentShader.fragmentshader");
+	GLuint programID = LoadShaders("C:\\Users\\jimja\\Documents\\RicochetGameObjects\\TransformVertexShader.vertexshader", "C:\\Users\\jimja\\Documents\\RicochetGameObjects\\TextureFragmentShader.fragmentshader");
 
 	// Load the textures
-	GLuint roomTexture = loadTexture("roomTexture.bmp");
-	GLuint bulletTexture = loadTexture("bulletTexture.bmp");
-	GLuint targetTexture = loadTexture("targetTexture.bmp");
-	GLuint gunTexture = loadTexture("gunTexture.bmp");
+	GLuint roomTexture = loadTexture("C:\\Users\\jimja\\Documents\\RicochetGameObjects\\roomTexture.bmp");
+	GLuint bulletTexture = loadTexture("C:\\Users\\jimja\\Documents\\RicochetGameObjects\\bulletTexture.bmp");
+	GLuint targetTexture = loadTexture("C:\\Users\\jimja\\Documents\\RicochetGameObjects\\targetTexture.bmp");
+	GLuint gunTexture = loadTexture("C:\\Users\\jimja\\Documents\\RicochetGameObjects\\gunTexture.bmp");
 
 	// Get a handle for the "textureSampler" uniform
 	GLuint TextureID = glGetUniformLocation(programID, "textureSampler");
@@ -411,7 +441,7 @@ int main()
 	vector<vec3> roomVertices;
 	vector<vec2> roomUvs;
 	vector<vec3> roomNormals;
-	bool result = loadModel("room.obj", roomIndices, roomVertices, roomUvs, roomNormals);
+	bool result = loadModel("C:\\Users\\jimja\\Documents\\RicochetGameObjects\\room.obj", roomIndices, roomVertices, roomUvs, roomNormals);
 
 	// Load the room vertex data into the GPU
 	GLuint roomIndiceBuffer;
@@ -426,7 +456,7 @@ int main()
 	vector<vec3> bulletVertices;
 	vector<vec2> bulletUvs;
 	vector<vec3> bulletNormals;
-	result = loadModel("bullet.obj", bulletIndices, bulletVertices, bulletUvs, bulletNormals);
+	result = loadModel("C:\\Users\\jimja\\Documents\\RicochetGameObjects\\bullet.obj", bulletIndices, bulletVertices, bulletUvs, bulletNormals);
 
 	// Load the bullet vertex data into the GPU
 	GLuint bulletIndiceBuffer;
@@ -441,7 +471,7 @@ int main()
 	vector<vec3> targetVertices;
 	vector<vec2> targetUvs;
 	vector<vec3> targetNormals;
-	result = loadModel("target2.obj", targetIndices, targetVertices, targetUvs, targetNormals);
+	result = loadModel("C:\\Users\\jimja\\Documents\\RicochetGameObjects\\target.obj", targetIndices, targetVertices, targetUvs, targetNormals);
 
 	// Load the target vertex data into the GPU
 	GLuint targetIndiceBuffer;
@@ -456,7 +486,7 @@ int main()
 	vector<vec3> gunVertices;
 	vector<vec2> gunUvs;
 	vector<vec3> gunNormals;
-	result = loadModel("gun2.obj", gunIndices, gunVertices, gunUvs, gunNormals);
+	result = loadModel("C:\\Users\\jimja\\Documents\\RicochetGameObjects\\gun.obj", gunIndices, gunVertices, gunUvs, gunNormals);
 
 	// Load the gun vertex data into the GPU
 	GLuint gunIndiceBuffer;
@@ -644,13 +674,23 @@ int main()
 	// For calculating delta time
 	double previousTime = glfwGetTime();
 
+	// Main game loop
 	do {
+
+		fpsCurrentTime = glutGet(GLUT_ELAPSED_TIME);
+		frames++;
+		if (fpsCurrentTime - fpsPreviousTime > 1000) {
+			fps = double(frames) * 1000.0 / (fpsCurrentTime - fpsPreviousTime);
+			frames = 0;
+			fpsPreviousTime = fpsCurrentTime;
+		}
 
 		// Get time difference between frames
 		double currentTime = glfwGetTime();
 		if (currentTime - previousTime >= 1.0) {
 			previousTime += 1.0;
 		}
+
 		float deltaTime = (float)currentTime - (float)previousTime;
 
 		// Use a slower simulation step?
@@ -665,6 +705,14 @@ int main()
 
 		// Update targets and counters
 		handleCounters();
+
+		// Check if the player has won or lost
+		if (bulletCount == 0 && targetCount >= 1) {
+			winOrLose = "You Lose!";
+		}
+		else if (targetCount == 0) {
+			winOrLose = "You Win!";
+		}
 
 		// Update the camera's position and orientation
 		updateCamera();
@@ -955,6 +1003,9 @@ int main()
 		glDisableVertexAttribArray(1);
 		glDisableVertexAttribArray(2);
 
+		// Draw the HUD
+		TwDraw();
+
 		// Swap buffers
 		glfwSwapBuffers(window);
 		glfwPollEvents();
@@ -991,7 +1042,8 @@ int main()
 	glDeleteProgram(debugProgramID);
 	glDeleteVertexArrays(1, &VertexArrayID);
 
-	// Close window and terminate GLFW
+	// Close window and terminate GLFW and AntTweakBar
+	TwTerminate();
 	glfwTerminate();
 
 	// Clean up Bullet
