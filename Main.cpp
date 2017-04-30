@@ -828,7 +828,7 @@ int main()
 
 			// Enable continuous collision detection
 			bulletRigidBody->setCcdMotionThreshold((btScalar)1e-7);
-			bulletRigidBody->setCcdSweptSphereRadius((btScalar)0.03);
+			bulletRigidBody->setCcdSweptSphereRadius((btScalar)0.02);
 
 			// Set the mesh's pointer add it to a collection of bullet rigid bodies
 			bulletRigidBody->setUserPointer(gameObjects[gameObjects.size() - 1]);
