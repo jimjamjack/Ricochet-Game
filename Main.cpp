@@ -1,10 +1,8 @@
 // Include standard headers
 #include <iostream>
-#include <stdio.h>
 #include <stdlib.h>
 #include <vector>
 #include <string>
-#include <algorithm>
 #include <iterator>
 using namespace std;
 
@@ -27,7 +25,6 @@ using namespace glm;
 // Include Bullet
 #include <btBulletDynamicsCommon.h>
 #include <btBulletCollisionCommon.h>
-#include <LinearMath/btIDebugDraw.h>
 
 // Include AntTweakBar
 #include <AntTweakBar.h>
@@ -420,13 +417,13 @@ int main()
 	glBindVertexArray(VertexArrayID);
 
 	// Load the model shaders
-	GLuint programID = LoadShaders("C:\\Users\\jimja\\Documents\\RicochetGameObjects\\TransformVertexShader.vertexshader", "C:\\Users\\jimja\\Documents\\RicochetGameObjects\\TextureFragmentShader.fragmentshader");
+	GLuint programID = LoadShaders("..\\RicochetGame\\TransformVertexShader.vertexshader", "..\\RicochetGame\\TextureFragmentShader.fragmentshader");
 
 	// Load the textures
-	GLuint roomTexture = loadTexture("C:\\Users\\jimja\\Documents\\RicochetGameObjects\\roomTexture.bmp");
-	GLuint bulletTexture = loadTexture("C:\\Users\\jimja\\Documents\\RicochetGameObjects\\bulletTexture.bmp");
-	GLuint targetTexture = loadTexture("C:\\Users\\jimja\\Documents\\RicochetGameObjects\\targetTexture.bmp");
-	GLuint gunTexture = loadTexture("C:\\Users\\jimja\\Documents\\RicochetGameObjects\\gunTexture.bmp");
+	GLuint roomTexture = loadTexture("..\\RicochetGame\\roomTexture.bmp");
+	GLuint bulletTexture = loadTexture("..\\RicochetGame\\bulletTexture.bmp");
+	GLuint targetTexture = loadTexture("..\\RicochetGame\\targetTexture.bmp");
+	GLuint gunTexture = loadTexture("..\\RicochetGame\\gunTexture.bmp");
 
 	// Get a handle for the "textureSampler" uniform
 	GLuint TextureID = glGetUniformLocation(programID, "textureSampler");
@@ -441,7 +438,7 @@ int main()
 	vector<vec3> roomVertices;
 	vector<vec2> roomUvs;
 	vector<vec3> roomNormals;
-	bool result = loadModel("C:\\Users\\jimja\\Documents\\RicochetGameObjects\\room.obj", roomIndices, roomVertices, roomUvs, roomNormals);
+	bool result = loadModel("..\\RicochetGame\\room.obj", roomIndices, roomVertices, roomUvs, roomNormals);
 
 	// Load the room vertex data into the GPU
 	GLuint roomIndiceBuffer;
@@ -456,7 +453,7 @@ int main()
 	vector<vec3> bulletVertices;
 	vector<vec2> bulletUvs;
 	vector<vec3> bulletNormals;
-	result = loadModel("C:\\Users\\jimja\\Documents\\RicochetGameObjects\\bullet.obj", bulletIndices, bulletVertices, bulletUvs, bulletNormals);
+	result = loadModel("..\\RicochetGame\\bullet.obj", bulletIndices, bulletVertices, bulletUvs, bulletNormals);
 
 	// Load the bullet vertex data into the GPU
 	GLuint bulletIndiceBuffer;
@@ -471,7 +468,7 @@ int main()
 	vector<vec3> targetVertices;
 	vector<vec2> targetUvs;
 	vector<vec3> targetNormals;
-	result = loadModel("C:\\Users\\jimja\\Documents\\RicochetGameObjects\\target.obj", targetIndices, targetVertices, targetUvs, targetNormals);
+	result = loadModel("..\\RicochetGame\\target.obj", targetIndices, targetVertices, targetUvs, targetNormals);
 
 	// Load the target vertex data into the GPU
 	GLuint targetIndiceBuffer;
@@ -486,7 +483,7 @@ int main()
 	vector<vec3> gunVertices;
 	vector<vec2> gunUvs;
 	vector<vec3> gunNormals;
-	result = loadModel("C:\\Users\\jimja\\Documents\\RicochetGameObjects\\gun.obj", gunIndices, gunVertices, gunUvs, gunNormals);
+	result = loadModel("..\\RicochetGame\\gun.obj", gunIndices, gunVertices, gunUvs, gunNormals);
 
 	// Load the gun vertex data into the GPU
 	GLuint gunIndiceBuffer;
@@ -526,7 +523,7 @@ int main()
 
 	// Use the debug drawer to draw rigid bodies
 	BulletDebugDrawer_OpenGL customDebugDrawer;
-	GLuint debugProgramID = LoadShaders("DebugVertexShader.vertexshader", "DebugFragmentShader.fragmentshader");
+	GLuint debugProgramID = LoadShaders("..\\RicochetGame\\DebugVertexShader.vertexshader", "..\\RicochetGame\\DebugFragmentShader.fragmentshader");
 	customDebugDrawer.programID = debugProgramID;
 	if (debugMode) {
 		dynamicsWorld->setDebugDrawer(&customDebugDrawer);
@@ -696,11 +693,11 @@ int main()
 		// Use a slower simulation step?
 		if (!slowMotion) {
 			// Step the simulation according to delta time
-			dynamicsWorld->stepSimulation(deltaTime, 7);
+			dynamicsWorld->stepSimulation(deltaTime, 15);
 		}
 		else {
 			// Step the simulation according to delta time but much slower
-			dynamicsWorld->stepSimulation(deltaTime / 1000.0f, 7);
+			dynamicsWorld->stepSimulation(0.001f, 15);
 		}
 
 		// Update targets and counters
@@ -768,7 +765,7 @@ int main()
 		/*-------------------------Rendering the bullet path-------------------------*/
 
 		// Store most current bullet's last position
-		if (shots != 0) bulletLinePoints.push_back(vec3(bulletPositions[shots - 1].x, bulletPositions[shots - 1].y, bulletPositions[shots - 1].z));
+		if (shots != 0) bulletLinePoints.push_back(bulletPositions[shots-1]);
 
 		// Draw the bullet's path
 		GLfloat thickness = 3.0;
@@ -828,7 +825,7 @@ int main()
 
 			// Enable continuous collision detection
 			bulletRigidBody->setCcdMotionThreshold((btScalar)1e-7);
-			bulletRigidBody->setCcdSweptSphereRadius((btScalar)0.02);
+			bulletRigidBody->setCcdSweptSphereRadius((btScalar)0.03);
 
 			// Set the mesh's pointer add it to a collection of bullet rigid bodies
 			bulletRigidBody->setUserPointer(gameObjects[gameObjects.size() - 1]);
